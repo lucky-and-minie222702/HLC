@@ -45,8 +45,9 @@ i = setup["i"]
 mode = setup["mode"]
 batch_size = setup["batch_size"]
 epochs = setup["epochs"]
+log_steps = setup["log_steps"]
 
 c = model_config[0]
 print(c)
 model, tokenizer = config_to_model(**c, mode = mode)
-train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, name = f"{c['model_name'].split('/')[-1]}-{mode}")
+train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}-{mode}")

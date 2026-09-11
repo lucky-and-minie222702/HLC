@@ -72,7 +72,7 @@ def config_to_model(
     return model, tokenizer
 
 
-def train_model(model, tokenizer, batch_size = 128, epochs = 1, name = "name"):
+def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100, name = "name"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(batch):
@@ -119,7 +119,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, name = "name"):
 
             total_train_loss += loss.item()
 
-            if step % 500 == 0:
+            if step % log_steps == 0:
                 tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
 
         avg_train_loss = total_train_loss / len(train_dataloader)
