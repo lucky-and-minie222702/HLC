@@ -120,7 +120,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, name = "name"):
             total_train_loss += loss.item()
 
             if step % 500 == 0:
-                tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.6f}")
+                tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
 
         avg_train_loss = total_train_loss / len(train_dataloader)
         
