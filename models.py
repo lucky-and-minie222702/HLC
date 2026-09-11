@@ -1,0 +1,182 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
+
+class SimCSELoss(nn.Module):
+    def __init__(self, temperature=0.05):
+        super(SimCSELoss, self).__init__()
+        self.temperature = temperature
+
+    def forward(self, z):
+        # z (B, dim)
+        sim_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1) / self.temperature
+        labels = torch.arange(z.size(0), device=z.device)
+        loss = F.cross_entropy(sim_matrix, labels)
+        return loss
+
+class UnsupervisedDataset(Dataset):
+    def __init__(self, texts):
+        self.texts = texts
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        return self.texts[idx]["text"]
+
+
+# (B, N, dim) -> (B, dim)
+def mean_pooling(token_embeddings, attention_mask):
+    input_mask_expanded = attention_mask.unsqueeze(-1).expand(token_embeddings.size()).float()
+    sum_embeddings = torch.sum(token_embeddings * input_mask_expanded, dim=1)
+    sum_mask = torch.clamp(input_mask_expanded.sum(dim=1), min=1e-9)
+    return sum_embeddings / sum_mask
+    
+
+class FrozenExtractorModel(nn.Module):
+    def __init__(self, model_name):
+        super().__init__()
+        
+        self.base_model = AutoModel.from_pretrained(
+            model_name, 
+            output_hidden_states=True
+        )
+        
+        for param in self.base_model.parameters():
+            param.requires_grad = False
+            
+        self.base_model.eval()
+
+    def train(self, mode = True):
+        super().train(mode)
+        self.base_model.eval()
+
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        with torch.no_grad():
+            outputs = self.base_model(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                **kwargs
+            )
+        all_hidden_states = torch.stack(outputs.hidden_states, axis = 0)  # (n_layers, B, N, hidden_dim)
+        all_hidden_states = torch.swapaxes(all_hidden_states, 0, 1)   # (B, n_layers, N, hidden_dim)
+        return all_hidden_states[::, 1::, ...]
+
+
+class HeadLevelCombination(nn.Module):
+    def __init__(self, n_heads, n_layers, hidden_dim):
+        super().__init__()
+        
+        self.n_heads = n_heads
+        self.n_layers = n_layers
+        self.hidden_dim = hidden_dim
+        self.head_dim = hidden_dim // n_heads
+        
+        self.w1 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads * n_layers))
+        self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
+        nn.init.xavier_uniform_(self.w1)
+        nn.init.xavier_uniform_(self.w2)
+        
+    def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
+
+        if use_original:
+            # Original: 11/09/2026
+            B = hidden_states.shape[0]
+            N = hidden_states.shape[2]
+            
+            h1 = torch.einsum('blni,lih->blnh', hidden_states, self.w1)  # (B, n_layers, N, n_heads * n_layers)
+            h2 = torch.einsum('blni,lih->blnh', hidden_states, self.w2)  # (B, n_layers, N, n_heads)
+            h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads * n_layers, N)
+            
+            w = torch.matmul(h1, h2)  # (B, n_layers, n_heads * n_layers, n_heads)
+            w = torch.mean(w, dim=1)  # (B, n_heads * n_layers, n_heads)
+            # w require shape (B, n_heads * n_layers, n_heads)
+            
+            x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
+            x = torch.swapaxes(x, 2, 3)  # (B, N, n_layers, n_heads, head_dim)
+            x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
+            x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
+            x = x.contiguous().view(B, N * self.head_dim, self.n_layers * self.n_heads)
+            
+            x = torch.matmul(x, w)  # (B, N * head_dim, n_heads)
+            x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
+            x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
+
+            return x
+
+        # Claude optimized
+        B = hidden_states.shape[0]
+        N = hidden_states.shape[2]
+
+        # --- 1. Fuse the two projections into a single matmul ---
+        # Concatenating on every forward call has a small cost, but merging two
+        # separate GEMM launches into one bigger, better-utilized GEMM is a net
+        # win, especially across a config sweep with many small layers/heads.
+        w12 = torch.cat([self.w1, self.w2], dim=-1)  # (L, I, H1+H2)
+        h12 = torch.einsum('blni,lih->blnh', hidden_states, w12)  # (B, L, N, H1+H2)
+        H1 = self.w1.shape[-1]
+        h1, h2 = h12[..., :H1], h12[..., H1:]  # views, no copy
+
+        # --- 2. Fuse swapaxes + matmul + mean(dim=1) into ONE einsum ---
+        # Old: h1_swapped = swapaxes(h1,2,3); w = matmul(h1_swapped, h2); w = w.mean(1)
+        # This materializes a (B, L, H1, H2) tensor before reducing over L.
+        # A single einsum contracts over both `n` and `l` directly, producing
+        # the (B, H1, H2) result with no intermediate per-layer tensor at all.
+        w = torch.einsum('blnh,blnk->bhk', h1, h2) / self.n_layers  # (B, H1, H2)
+
+        # --- 3. x reshape chain — kept functionally identical ---
+        # NOTE: after the first swapaxes(2,3), the following .view() does NOT
+        # correspond to a clean permute (N,H don't align with the target
+        # N, L*H split) — it's a raw reinterpretation of the contiguous buffer.
+        # That means this can't be replaced by a single combined .permute()
+        # without changing the actual output. Both copies here are structurally
+        # required for this exact sequence of ops, so I kept them, just swapped
+        # .contiguous().view() for .reshape() (equivalent cost, slightly more
+        # robust/idiomatic — reshape only copies when actually necessary).
+        x = hidden_states.reshape(B, self.n_layers, N, self.n_heads, self.head_dim)
+        x = torch.swapaxes(x, 2, 3)
+        x = x.reshape(B, N, self.n_layers * self.n_heads, self.head_dim)
+        x = torch.swapaxes(x, 2, 3)
+        x = x.reshape(B, N * self.head_dim, self.n_layers * self.n_heads)
+
+        # --- 4. Final combine ---
+        x = torch.matmul(x, w)  # (B, N*head_dim, n_heads) — batched GEMM, already efficient
+        x = x.reshape(B, N, self.head_dim, self.n_heads)
+        x = x.reshape(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
+
+        
+        return x
+    
+class HLCModel(nn.Module):
+    def __init__(self, model_name, hidden_dim, n_layers, n_heads = 1):
+        super().__init__()
+        
+        self.backbone = FrozenExtractorModel(model_name)
+        self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
+        
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
+        x = self.hlc(x)
+        x = mean_pooling(x, attention_mask)
+        return x
+
+
+class BaselineModel(nn.Module):
+    def __init__(self, model_name, hidden_dim):
+        super().__init__()
+        
+        self.backbone = FrozenExtractorModel(model_name)
+        self.out_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim * 2),
+            nn.ReLU(),
+            nn.Linear(hidden_dim * 2, hidden_dim),
+        )
+        
+    def forward(self, input_ids, attention_mask=None, **kwargs):
+        x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
+        x = x[::, -1, ...]
+        x = mean_pooling(x, attention_mask)
+        x = self.out_head(x)
+        return x
