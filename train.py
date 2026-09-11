@@ -19,9 +19,8 @@ wiki_dataset = load_dataset(
 corpus = wiki_dataset["train"].to_list()
 
 
-def evaluate_sts(model, dataloader, loss_fn, device):
+def evaluate_sts(model, dataloader, device):
     model.eval()
-    val_loss = 0.0
     all_preds = []
     all_targets = []
 
@@ -35,15 +34,12 @@ def evaluate_sts(model, dataloader, loss_fn, device):
             emb2 = model(input_ids=batch2["input_ids"], attention_mask=batch2["attention_mask"])
             
             predictions = F.cosine_similarity(emb1, emb2, dim=1)
-            loss = loss_fn(predictions, targets)
 
-            val_loss += loss.item()
             all_preds.extend(predictions.cpu().numpy())
             all_targets.extend(targets.cpu().numpy())
 
-    avg_val_loss = val_loss / len(dataloader)
     spearman_corr, _ = spearmanr(all_preds, all_targets)
-    return avg_val_loss, spearman_corr
+    return spearman_corr
 
 
 def config_to_model(
