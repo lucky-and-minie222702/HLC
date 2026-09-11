@@ -42,4 +42,4 @@ mode = "hlc"
 c = model_config[0]
 print(c)
 model, tokenizer = config_to_model(**c, mode = mode)
-train_model(model, tokenizer, name = f"{c["model_name"].split("/")[-1]}-{mode}")
+train_model(model, tokenizer, name = f"{c['model_name'].split('/')[-1]}-{mode}")
