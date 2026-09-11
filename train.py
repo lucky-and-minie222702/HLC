@@ -121,8 +121,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
 
             if step % log_steps == 0:
                 tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
-
-        avg_train_loss = total_train_loss / len(train_dataloader)
+                total_train_loss = 0.0
         
     torch.save(model.state_dict(), f"{name}_model.pt")
 
