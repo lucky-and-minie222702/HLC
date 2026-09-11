@@ -95,7 +95,7 @@ class HeadLevelCombination(nn.Module):
             # w require shape (B, n_heads * n_layers, n_heads)
             
             x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
-            x = torch.swapaxes(x, 2, 3)  # (B, N, n_layers, n_heads, head_dim)
+            x = torch.swapaxes(x, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
             x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
             x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
             x = x.contiguous().view(B, N * self.head_dim, self.n_layers * self.n_heads)
@@ -111,32 +111,17 @@ class HeadLevelCombination(nn.Module):
         N = hidden_states.shape[2]
 
         # --- 1. Fuse the two projections into a single matmul ---
-        # Concatenating on every forward call has a small cost, but merging two
-        # separate GEMM launches into one bigger, better-utilized GEMM is a net
-        # win, especially across a config sweep with many small layers/heads.
         w12 = torch.cat([self.w1, self.w2], dim=-1)  # (L, I, H1+H2)
         h12 = torch.einsum('blni,lih->blnh', hidden_states, w12)  # (B, L, N, H1+H2)
         H1 = self.w1.shape[-1]
         h1, h2 = h12[..., :H1], h12[..., H1:]  # views, no copy
 
         # --- 2. Fuse swapaxes + matmul + mean(dim=1) into ONE einsum ---
-        # Old: h1_swapped = swapaxes(h1,2,3); w = matmul(h1_swapped, h2); w = w.mean(1)
-        # This materializes a (B, L, H1, H2) tensor before reducing over L.
-        # A single einsum contracts over both `n` and `l` directly, producing
-        # the (B, H1, H2) result with no intermediate per-layer tensor at all.
         w = torch.einsum('blnh,blnk->bhk', h1, h2) / self.n_layers  # (B, H1, H2)
 
         # --- 3. x reshape chain — kept functionally identical ---
-        # NOTE: after the first swapaxes(2,3), the following .view() does NOT
-        # correspond to a clean permute (N,H don't align with the target
-        # N, L*H split) — it's a raw reinterpretation of the contiguous buffer.
-        # That means this can't be replaced by a single combined .permute()
-        # without changing the actual output. Both copies here are structurally
-        # required for this exact sequence of ops, so I kept them, just swapped
-        # .contiguous().view() for .reshape() (equivalent cost, slightly more
-        # robust/idiomatic — reshape only copies when actually necessary).
         x = hidden_states.reshape(B, self.n_layers, N, self.n_heads, self.head_dim)
-        x = torch.swapaxes(x, 2, 3)
+        x = torch.swapaxes(x, 1, 2)
         x = x.reshape(B, N, self.n_layers * self.n_heads, self.head_dim)
         x = torch.swapaxes(x, 2, 3)
         x = x.reshape(B, N * self.head_dim, self.n_layers * self.n_heads)
@@ -146,7 +131,6 @@ class HeadLevelCombination(nn.Module):
         x = x.reshape(B, N, self.head_dim, self.n_heads)
         x = x.reshape(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
 
-        
         return x
     
 class HLCModel(nn.Module):
