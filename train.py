@@ -84,17 +84,11 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
 
     # data
     dataset = UnsupervisedDataset(corpus)
-
-    def seed_worker(worker_id):
-        worker_seed = torch.initial_seed() % 2**32
-        np.random.seed(worker_seed)
-        random.seed(worker_seed)
         
     g = torch.Generator()
     g.manual_seed(22022009)
 
-    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, generator=g,
-    worker_init_fn=seed_worker)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn, generator=g)
     
     epochs = epochs
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
@@ -105,7 +99,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
         num_training_steps = total_steps
     )
     
-    loss_fn = SimCSELoss(temperature=0.25)
+    loss_fn = SimCSELoss(temperature=0.07)
 
     for epoch in range(epochs):
         model.train()

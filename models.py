@@ -139,11 +139,13 @@ class HLCModel(nn.Module):
         
         self.backbone = FrozenExtractorModel(model_name)
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
+        self.out_head = nn.Linear(hidden_dim, hidden_dim, bias = False)
         
     def forward(self, input_ids, attention_mask=None, **kwargs):
         x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         x = self.hlc(x)
         x = mean_pooling(x, attention_mask)
+        x = self.out_head(x)
         return x
 
 
