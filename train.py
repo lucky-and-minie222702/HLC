@@ -72,7 +72,7 @@ def config_to_model(
     return model, tokenizer
 
 
-def train_model(model, tokenizer, name = "name"):
+def train_model(model, tokenizer, batch_size = 128, epochs = 1, name = "name"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(batch):
@@ -86,9 +86,9 @@ def train_model(model, tokenizer, name = "name"):
 
     # data
     dataset = UnsupervisedDataset(corpus)
-    train_dataloader = DataLoader(dataset, batch_size=128, shuffle=True, collate_fn=collate_fn)
+    train_dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, collate_fn=collate_fn)
     
-    epochs = 1
+    epochs = epochs
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
     total_steps = len(train_dataloader) * epochs
     scheduler = get_linear_schedule_with_warmup(
@@ -104,7 +104,7 @@ def train_model(model, tokenizer, name = "name"):
         total_train_loss = 0.0
         num_s = 0
 
-        for step, batch in tqdm(enumerate(train_dataloader, 1), desc = f"ep [{epoch+1}/{epochs}]"):
+        for step, batch in tqdm(enumerate(train_dataloader, 1), desc = f"ep [{epoch+1}/{epochs}]", total=len(train_dataloader)):
             num_s += batch["input_ids"].shape[0]
             optimizer.zero_grad()
 
@@ -119,15 +119,10 @@ def train_model(model, tokenizer, name = "name"):
 
             total_train_loss += loss.item()
 
-            if step % 10000:
-                print(f"Step {step}: loss = {total_train_loss / num_s:.6f}")
+            if step % 500 == 0:
+                tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.6f}")
 
         avg_train_loss = total_train_loss / len(train_dataloader)
-
-        print(
-            f"Epoch {epoch + 1}/{epochs} | "
-            f"Train Loss: {avg_train_loss:.6f} | "
-        )
         
     torch.save(model.state_dict(), f"{name}_model.pt")
 

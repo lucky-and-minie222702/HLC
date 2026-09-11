@@ -1,0 +1,6 @@
+{
+	"i": 0,
+	"mode": "hlc",
+	"batch_size": 256,
+	"epochs": 1
+}

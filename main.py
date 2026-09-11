@@ -37,9 +37,16 @@ model_config = [
     },
 ]
 
-i = 0
-mode = "hlc"
+setup = None
+with open('config.json', 'r', encoding='utf-8') as file:
+    setup = json.load(file)
+    
+i = setup["i"]
+mode = setup["mode"]
+batch_size = setup["batch_size"]
+epochs = setup["epochs"]
+
 c = model_config[0]
 print(c)
 model, tokenizer = config_to_model(**c, mode = mode)
-train_model(model, tokenizer, name = f"{c['model_name'].split('/')[-1]}-{mode}")
+train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, name = f"{c['model_name'].split('/')[-1]}-{mode}")
