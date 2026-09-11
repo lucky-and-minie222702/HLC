@@ -1,7 +1,0 @@
-{
-	"i": 0,
-	"mode": "hlc",
-	"batch_size": 512,
-	"epochs": 2,
-	"log_steps": 100
-}
