@@ -78,7 +78,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
             batch, 
             padding=True, 
             truncation=True, 
-            max_length=128, 
+            max_length=64, 
             return_tensors="pt"
         )
 
@@ -99,7 +99,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
         num_training_steps = total_steps
     )
     
-    loss_fn = SimCSELoss(temperature=0.07)
+    loss_fn = SimCSELoss(temperature=0.05)
 
     for epoch in range(epochs):
         model.train()
