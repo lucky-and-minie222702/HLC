@@ -9,39 +9,45 @@ model_config = [
         "hidden_dim": 768,
     },
     {
-       "model_name": "google-bert/bert-base-uncased", 
-        "n_heads": 12,
-        "n_layers": 12,
+       "model_name": "princeton-nlp/sup-simcse-bert-base-uncased", 
+        "n_heads": 1,
+        "n_layers": 10,
         "hidden_dim": 768,
     },
+    # {
+    #    "model_name": "google-bert/bert-base-uncased", 
+    #     "n_heads": 12,
+    #     "n_layers": 12,
+    #     "hidden_dim": 768,
+    # },
 
-    {
-       "model_name": "google-bert/bert-base-cased", 
-        "n_heads": 12,
-        "n_layers": 12,
-        "hidden_dim": 768,
-    },
+    # {
+    #    "model_name": "google-bert/bert-base-cased", 
+    #     "n_heads": 12,
+    #     "n_layers": 12,
+    #     "hidden_dim": 768,
+    # },
     
-    {
-       "model_name": "google-bert/bert-large-uncased", 
-        "n_heads": 16,
-        "n_layers": 24,
-        "hidden_dim": 1024,
-    },
+    # {
+    #    "model_name": "google-bert/bert-large-uncased", 
+    #     "n_heads": 16,
+    #     "n_layers": 24,
+    #     "hidden_dim": 1024,
+    # },
 
-    {
-       "model_name": "google-bert/bert-base-cased", 
-        "n_heads": 16,
-        "n_layers": 24,
-        "hidden_dim": 1024,
-    },
+    # {
+    #    "model_name": "google-bert/bert-base-cased", 
+    #     "n_heads": 16,
+    #     "n_layers": 24,
+    #     "hidden_dim": 1024,
+    # },
 
-    {
-       "model_name": "FacebookAI/roberta-large",
-        "n_heads": 16,
-        "n_layers": 24,
-        "hidden_dim": 1024,
-    },
+    # {
+    #    "model_name": "FacebookAI/roberta-large",
+    #     "n_heads": 16,
+    #     "n_layers": 24,
+    #     "hidden_dim": 1024,
+    # },
 ]
 
 setup = None
