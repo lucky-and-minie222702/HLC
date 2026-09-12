@@ -72,13 +72,15 @@ class FrozenExtractorModel(nn.Module):
         super().train(mode)
         self.base_model.eval()
 
-    def forward(self, input_ids, attention_mask=None, **kwargs):
+    def forward(self, input_ids, last_state_only = False, attention_mask=None, **kwargs):
         with torch.no_grad():
             outputs = self.base_model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 **kwargs
             )
+        if last_state_only:
+            return outputs.last_hidden_state
         all_hidden_states = torch.stack(outputs.hidden_states, axis = 0)  # (n_layers, B, N, hidden_dim)
         all_hidden_states = torch.swapaxes(all_hidden_states, 0, 1)   # (B, n_layers, N, hidden_dim)
         return all_hidden_states
@@ -168,13 +170,12 @@ class HLCModel(nn.Module):
         self.out_head = nn.Linear(hidden_dim, hidden_dim, bias = False)
         
     def forward(self, input_ids, attention_mask=None, **kwargs):
-        x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
+        x = self.backbone(input_ids, attention_mask=attention_mask, last_state_only = True, **kwargs)
         # x = x[::, -self.n_layers::, ...]
         # x = self.hlc(x)
-        x = x[::, -1, ...]
-        x = mean_pooling(x, attention_mask)
+        # x = mean_pooling(x, attention_mask)
         # x = self.out_head(x)
-        return x
+        return x[::, 0, ...]
 
 
 class BaselineModel(nn.Module):
