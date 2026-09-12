@@ -60,7 +60,7 @@ batch_size = setup["batch_size"]
 epochs = setup["epochs"]
 log_steps = setup["log_steps"]
 
-c = model_config[0]
+c = model_config[i]
 print(c, mode)
 model, tokenizer = config_to_model(**c, mode = mode)
 
