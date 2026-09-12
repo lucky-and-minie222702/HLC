@@ -2,12 +2,12 @@ from train import *
 import sys
 
 model_config = [
-    {
-       "model_name": "princeton-nlp/unsup-simcse-bert-base-uncased", 
-        "n_heads": 12,
-        "n_layers": 12,
-        "hidden_dim": 768,
-    },
+    # {
+    #    "model_name": "princeton-nlp/unsup-simcse-bert-base-uncased", 
+    #     "n_heads": 12,
+    #     "n_layers": 12,
+    #     "hidden_dim": 768,
+    # },
     {
        "model_name": "google-bert/bert-base-uncased", 
         "n_heads": 12,
