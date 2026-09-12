@@ -44,6 +44,17 @@ def evaluate_sts(model, dataloader, device):
     return spearman_corr
 
 
+def run_val(model, tokenizer, batch_size = 128):
+    for y in ["12", "13", "14", "15", "16"]:
+        dataset = load_sts12_16_dataset(years = [y])
+        
+        collator = STSCollator(tokenizer=tokenizer)
+        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=False, collate_fn=collator)
+        
+        score = evaluate_sts(model, dataloader, device = torch.device("cuda"))
+        print(f"STS{y}: {score:.6f}")
+
+
 def config_to_model(
         model_name,
         hidden_dim,
@@ -124,6 +135,9 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
             if step % log_steps == 0:
                 tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
                 total_train_loss = 0.0
+            
+            print("Validating on sts:")
+            run_val(model, tokenizer, batch_size)
         
     torch.save(model.state_dict(), f"{name}_model.pt")
 
