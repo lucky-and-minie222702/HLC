@@ -138,8 +138,8 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
                 tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
                 total_train_loss = 0.0
             
-            print("Validating on sts:")
-            run_val(model, tokenizer, batch_size)
+        print("Validating on sts:")
+        run_val(model, tokenizer, batch_size)
         
     torch.save(model.state_dict(), f"{name}_model.pt")
 
