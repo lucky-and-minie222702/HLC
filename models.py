@@ -59,7 +59,8 @@ class FrozenExtractorModel(nn.Module):
         
         self.base_model = AutoModel.from_pretrained(
             model_name, 
-            output_hidden_states=True
+            output_hidden_states=True,
+            use_safetensors=True
         )
         
         for param in self.base_model.parameters():
