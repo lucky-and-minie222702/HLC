@@ -78,7 +78,7 @@ class HeadLevelCombination(nn.Module):
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
         
-        self.dropout = nn.Dropout(0.2)
+        self.dropout = nn.Dropout2d(0.2)
         
     def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
 
