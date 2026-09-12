@@ -5,16 +5,34 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 class SimCSELoss(nn.Module):
-    def __init__(self, temperature=0.05):
+    def __init__(self, temperature=0.05, mode = "normal"):
         super(SimCSELoss, self).__init__()
         self.temperature = temperature
+        self.mode = mode
 
     def forward(self, z1, z2):
         # z (B, dim)
-        sim_matrix = F.cosine_similarity(z1.unsqueeze(1), z2.unsqueeze(0), dim=-1) / self.temperature
-        labels = torch.arange(z1.size(0), device=z1.device)
-        loss = F.cross_entropy(sim_matrix, labels)
-        return loss
+        if self.mode == "normal":
+            sim_matrix = F.cosine_similarity(z1.unsqueeze(1), z2.unsqueeze(0), dim=-1) / self.temperature
+            labels = torch.arange(z1.size(0), device=z1.device)
+            loss = F.cross_entropy(sim_matrix, labels)
+            return loss
+
+        elif self.mode == "merged":
+            z = torch.cat([z1, z2], dim=0)
+            sim_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1) / self.temperature
+    
+            sim_matrix.fill_diagonal_(-1e9)
+            
+            B = z1.size(0)
+            labels = torch.cat([
+                torch.arange(B, 2 * B, device=z1.device),
+                torch.arange(0, B, device=z1.device)
+            ], dim=0)
+            
+            loss = F.cross_entropy(sim_matrix, labels)
+
+            return loss
 
 class UnsupervisedDataset(Dataset):
     def __init__(self, texts):
@@ -62,7 +80,7 @@ class FrozenExtractorModel(nn.Module):
             )
         all_hidden_states = torch.stack(outputs.hidden_states, axis = 0)  # (n_layers, B, N, hidden_dim)
         all_hidden_states = torch.swapaxes(all_hidden_states, 0, 1)   # (B, n_layers, N, hidden_dim)
-        return all_hidden_states[::, 1::, ...]
+        return all_hidden_states
 
 
 class HeadLevelCombination(nn.Module):
@@ -150,12 +168,14 @@ class HLCModel(nn.Module):
     def __init__(self, model_name, hidden_dim, n_layers, n_heads = 1):
         super().__init__()
         
+        self.n_layers = n_layers
         self.backbone = FrozenExtractorModel(model_name)
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
         self.out_head = nn.Linear(hidden_dim, hidden_dim, bias = False)
         
     def forward(self, input_ids, attention_mask=None, **kwargs):
         x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
+        x = x[::, -self.n_layers::, ...]
         x = self.hlc(x)
         x = mean_pooling(x, attention_mask)
         x = self.out_head(x)
