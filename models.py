@@ -75,8 +75,11 @@ class HeadLevelCombination(nn.Module):
         
         self.w1 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
         self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
+        self.w3 = nn.Parameter(torch.empty(n_layers, hidden_dim, hidden_dim))
+        
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
+        nn.init.xavier_uniform_(self.w3)
         
         self.dropout = nn.Dropout2d(0.2)
         
@@ -84,6 +87,7 @@ class HeadLevelCombination(nn.Module):
 
         if use_original:
             # Original: 11/09/2026
+            # h1, h2 = Q, K ; h3 = V
             B = hidden_states.shape[0]
             N = hidden_states.shape[2]
             
@@ -93,43 +97,49 @@ class HeadLevelCombination(nn.Module):
             h2 = self.dropout(h2)
             h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads, N)
             
-            w = torch.matmul(h1, h2)  # (B, n_layers, n_heads, n_heads)
-            w = w.contiguous().view(B, self.n_layers * self.n_heads, self.n_heads)
-            # w requires shape (B, n_layers * n_heads, n_heads)
+            m = torch.matmul(h1, h2)  # (B, n_layers, n_heads, n_heads)
+            m = m.contiguous().view(B, self.n_layers * self.n_heads, self.n_heads)
+            m = F.softmax(m, dim = 1)
+            # m requires shape (B, n_layers * n_heads, n_heads)
             
-            x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
+            h3 = torch.einsum('blni,lih->blnh', hidden_states, self.w3)  # (B, n_layers, N, hidden_dim)
+            h3 = self.dropout(h3)
+            x = h3.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
             x = torch.swapaxes(x, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
             x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
             x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
             x = x.contiguous().view(B, N * self.head_dim, self.n_layers * self.n_heads)
             
-            x = torch.matmul(x, w)  # (B, N * head_dim, n_heads)
+            x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
             x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
 
             return x
         
+        
         # claude optimized
         B, L, N, I = hidden_states.shape
         H, Dh = self.n_heads, self.head_dim
 
-        # one einsum instead of two — fuse w1/w2 along the output axis
-        w12 = torch.cat((self.w1, self.w2), dim=-1)          # (L, I, 2H)
+        # fuse w1/w2 (same output width n_heads) — w3 has a different output width so stays separate
+        w12 = torch.cat((self.w1, self.w2), dim=-1)                  # (L, I, 2H)
         h1, h2 = torch.einsum('blni,lig->blng', hidden_states, w12).chunk(2, dim=-1)
-        # h1, h2: (B, L, N, H) each
+        h1 = self.dropout(h1)                                         # independent mask, kept separate
+        h2 = self.dropout(h2)                                         # independent mask, kept separate
 
-        # per-(layer,head) mixing matrix — no explicit transpose/copy needed
-        w = torch.einsum('blnh,blng->blhg', h1, h2)          # (B, L, H, H)
-        w = w.reshape(B, L * H, H)
+        m = torch.einsum('blnh,blng->blhg', h1, h2)                   # (B, L, H, H), no explicit transpose
+        m = m.reshape(B, L * H, H)
+        m = F.softmax(m, dim=1)
 
-        # single permute + single copy (was: two swapaxes + two contiguous copies)
-        x = hidden_states.view(B, L, N, H, Dh)
-        x = x.permute(0, 2, 4, 1, 3)                          # (B, N, Dh, L, H), view only
-        x = x.reshape(B, N * Dh, L * H)                       # one physical copy here
+        h3 = torch.einsum('blni,lih->blnh', hidden_states, self.w3)  # (B, L, N, hidden_dim)
+        h3 = self.dropout(h3)
 
-        x = torch.matmul(x, w)                                # (B, N*Dh, H)
-        x = x.reshape(B, N, Dh * H)                           # (B, N, hidden_dim)
+        # single permute+copy instead of two swapaxes+view chains
+        x = h3.view(B, L, N, H, Dh)
+        x = x.permute(0, 2, 4, 1, 3).reshape(B, N * Dh, L * H)
 
+        x = torch.matmul(x, m)                                        # (B, N*Dh, H)
+        x = x.reshape(B, N, Dh * H)                                   # (B, N, hidden_dim)
         return x
     
 class HLCModel(nn.Module):
