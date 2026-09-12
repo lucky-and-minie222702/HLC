@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 class SimCSELoss(nn.Module):
-    def __init__(self, temperature=0.05, mode = "merged"):
+    def __init__(self, temperature=0.05, mode = "normal"):
         super(SimCSELoss, self).__init__()
         self.temperature = temperature
         self.mode = mode
