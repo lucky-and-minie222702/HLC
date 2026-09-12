@@ -78,6 +78,8 @@ class HeadLevelCombination(nn.Module):
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
         
+        self.dropout = nn.Dropout(0.2)
+        
     def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
 
         if use_original:
@@ -86,7 +88,9 @@ class HeadLevelCombination(nn.Module):
             N = hidden_states.shape[2]
             
             h1 = torch.einsum('blni,lih->blnh', hidden_states, self.w1)  # (B, n_layers, N, n_heads)
+            h1 = self.dropout(h1)
             h2 = torch.einsum('blni,lih->blnh', hidden_states, self.w2)  # (B, n_layers, N, n_heads)
+            h2 = self.dropout(h2)
             h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads, N)
             
             w = torch.matmul(h1, h2)  # (B, n_layers, n_heads, n_heads)
@@ -152,6 +156,7 @@ class BaselineModel(nn.Module):
         self.out_head = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim * 2),
             nn.ReLU(),
+            nn.Dropout(0.2),
             nn.Linear(hidden_dim * 2, hidden_dim),
         )
         
