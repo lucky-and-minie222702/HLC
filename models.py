@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 class SimCSELoss(nn.Module):
-    def __init__(self, temperature=0.05, mode = "merged"):
+    def __init__(self, temperature=0.05, mode = "mode"):
         super(SimCSELoss, self).__init__()
         self.temperature = temperature
         self.mode = mode
@@ -96,8 +96,8 @@ class HeadLevelCombination(nn.Module):
         self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
         self.w3 = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Dropout(0.1),
             nn.GELU(),
+            nn.Dropout(0.1),
             nn.Linear(hidden_dim, hidden_dim),
         )
         
