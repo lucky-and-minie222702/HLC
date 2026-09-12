@@ -9,10 +9,10 @@ class SimCSELoss(nn.Module):
         super(SimCSELoss, self).__init__()
         self.temperature = temperature
 
-    def forward(self, z):
+    def forward(self, z1, z2):
         # z (B, dim)
-        sim_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1) / self.temperature
-        labels = torch.arange(z.size(0), device=z.device)
+        sim_matrix = F.cosine_similarity(z1.unsqueeze(1), z2.unsqueeze(0), dim=-1) / self.temperature
+        labels = torch.arange(z1.size(0), device=z1.device)
         loss = F.cross_entropy(sim_matrix, labels)
         return loss
 
@@ -64,6 +64,7 @@ class FrozenExtractorModel(nn.Module):
         all_hidden_states = torch.swapaxes(all_hidden_states, 0, 1)   # (B, n_layers, N, hidden_dim)
         return all_hidden_states[::, 1::, ...]
 
+
 class HeadLevelCombination(nn.Module):
     def __init__(self, n_heads, n_layers, hidden_dim):
         super().__init__()
@@ -75,13 +76,17 @@ class HeadLevelCombination(nn.Module):
         
         self.w1 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
         self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
-        self.w3 = nn.Parameter(torch.empty(n_layers, hidden_dim, hidden_dim))
+        self.w3 = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.Dropout(0.1),
+            nn.GELU(),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
         
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
-        nn.init.xavier_uniform_(self.w3)
         
-        self.dropout = nn.Dropout2d(0.2)
+        self.dropout = nn.Dropout(0.1)
         
     def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
 
@@ -92,19 +97,16 @@ class HeadLevelCombination(nn.Module):
             N = hidden_states.shape[2]
             
             h1 = torch.einsum('blni,lih->blnh', hidden_states, self.w1)  # (B, n_layers, N, n_heads)
-            h1 = self.dropout(h1)
             h2 = torch.einsum('blni,lih->blnh', hidden_states, self.w2)  # (B, n_layers, N, n_heads)
-            h2 = self.dropout(h2)
             h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads, N)
             
             m = torch.matmul(h1, h2)  # (B, n_layers, n_heads, n_heads)
             m = m.contiguous().view(B, self.n_layers * self.n_heads, self.n_heads)
             m = F.softmax(m, dim = 1)
+            m = self.dropout(m)
             # m requires shape (B, n_layers * n_heads, n_heads)
             
-            h3 = torch.einsum('blni,lih->blnh', hidden_states, self.w3)  # (B, n_layers, N, hidden_dim)
-            h3 = self.dropout(h3)
-            x = h3.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
+            x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
             x = torch.swapaxes(x, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
             x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
             x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
@@ -113,6 +115,8 @@ class HeadLevelCombination(nn.Module):
             x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
             x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
+            x = self.w3(x)
+            x = self.dropout(x)  # (B, N, hidden_dim)
 
             return x
         
@@ -121,25 +125,25 @@ class HeadLevelCombination(nn.Module):
         B, L, N, I = hidden_states.shape
         H, Dh = self.n_heads, self.head_dim
 
-        # fuse w1/w2 (same output width n_heads) — w3 has a different output width so stays separate
-        w12 = torch.cat((self.w1, self.w2), dim=-1)                  # (L, I, 2H)
+        # fuse w1/w2 (same output width) into one einsum
+        w12 = torch.cat((self.w1, self.w2), dim=-1)              # (L, I, 2H)
         h1, h2 = torch.einsum('blni,lig->blng', hidden_states, w12).chunk(2, dim=-1)
-        h1 = self.dropout(h1)                                         # independent mask, kept separate
-        h2 = self.dropout(h2)                                         # independent mask, kept separate
 
-        m = torch.einsum('blnh,blng->blhg', h1, h2)                   # (B, L, H, H), no explicit transpose
+        m = torch.einsum('blnh,blng->blhg', h1, h2)               # (B, L, H, H), no explicit transpose
         m = m.reshape(B, L * H, H)
         m = F.softmax(m, dim=1)
-
-        h3 = torch.einsum('blni,lih->blnh', hidden_states, self.w3)  # (B, L, N, hidden_dim)
-        h3 = self.dropout(h3)
+        m = self.dropout(m)
 
         # single permute+copy instead of two swapaxes+view chains
-        x = h3.view(B, L, N, H, Dh)
+        x = hidden_states.view(B, L, N, H, Dh)
         x = x.permute(0, 2, 4, 1, 3).reshape(B, N * Dh, L * H)
 
-        x = torch.matmul(x, m)                                        # (B, N*Dh, H)
-        x = x.reshape(B, N, Dh * H)                                   # (B, N, hidden_dim)
+        x = torch.matmul(x, m)                                    # (B, N*Dh, H)
+        x = x.reshape(B, N, Dh * H)                               # (B, N, hidden_dim)
+
+        x = self.w3(x)
+        x = self.dropout(x)
+
         return x
     
 class HLCModel(nn.Module):
@@ -164,10 +168,10 @@ class BaselineModel(nn.Module):
         
         self.backbone = FrozenExtractorModel(model_name)
         self.out_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim * 2),
-            nn.ReLU(),
-            nn.Dropout(0.2),
-            nn.Linear(hidden_dim * 2, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
         )
         
     def forward(self, input_ids, attention_mask=None, **kwargs):

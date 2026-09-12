@@ -45,6 +45,7 @@ def evaluate_sts(model, dataloader, device):
 
 
 def run_val(model, tokenizer, batch_size = 128):
+    model.eval()
     for y in ["12", "13", "14", "15", "16"]:
         dataset = load_sts12_16_dataset(years = [y])
         
@@ -122,9 +123,10 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
             optimizer.zero_grad()
 
             batch = {k: v.to(device) for k, v in batch.items()}
-            emb = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            emb1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            emb2 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
 
-            loss = loss_fn(emb)
+            loss = loss_fn(emb1, emb2)
             loss.backward()
 
             optimizer.step()
