@@ -134,8 +134,8 @@ class HeadLevelCombination(nn.Module):
             x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
             x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
-            x = self.w3(x)
-            x = self.dropout(x)  # (B, N, hidden_dim)
+            # x = self.w3(x)
+            # x = self.dropout(x)  # (B, N, hidden_dim)
 
             return x
         
@@ -160,8 +160,8 @@ class HeadLevelCombination(nn.Module):
         x = torch.matmul(x, m)                                    # (B, N*Dh, H)
         x = x.reshape(B, N, Dh * H)                               # (B, N, hidden_dim)
 
-        x = self.w3(x)
-        x = self.dropout(x)
+        # x = self.w3(x)
+        # x = self.dropout(x)
 
         return x
     
