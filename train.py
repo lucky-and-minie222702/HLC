@@ -125,6 +125,9 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
             batch = {k: v.to(device) for k, v in batch.items()}
             emb1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
             emb2 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            
+            print(batch["input_ids"].shape)
+            print(emb1.shape, emb2.shape)
 
             loss = loss_fn(emb1, emb2)
             loss.backward()

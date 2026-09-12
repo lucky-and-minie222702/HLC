@@ -169,7 +169,6 @@ class HLCModel(nn.Module):
         
     def forward(self, input_ids, attention_mask=None, **kwargs):
         x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
-        print(x.shape)
         # x = x[::, -self.n_layers::, ...]
         # x = self.hlc(x)
         # x = mean_pooling(x, attention_mask)
