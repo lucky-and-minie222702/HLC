@@ -171,9 +171,10 @@ class HLCModel(nn.Module):
         x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         # x = x[::, -self.n_layers::, ...]
         # x = self.hlc(x)
-        # x = mean_pooling(x, attention_mask)
+        x = x[::, -1, ...]
+        x = mean_pooling(x, attention_mask)
         # x = self.out_head(x)
-        return x[::, -1, ...]
+        return x
 
 
 class BaselineModel(nn.Module):
