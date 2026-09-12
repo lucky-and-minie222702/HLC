@@ -5,7 +5,7 @@ from torch.utils.data import Dataset, DataLoader
 from transformers import AutoTokenizer, AutoModel, get_linear_schedule_with_warmup
 
 class SimCSELoss(nn.Module):
-    def __init__(self, temperature=0.05, mode = "normal"):
+    def __init__(self, temperature=0.05, mode = "merged"):
         super(SimCSELoss, self).__init__()
         self.temperature = temperature
         self.mode = mode
@@ -22,7 +22,7 @@ class SimCSELoss(nn.Module):
             z = torch.cat([z1, z2], dim=0)
             sim_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1) / self.temperature
     
-            sim_matrix.fill_diagonal_(-1e9)
+            sim_matrix.fill_diagonal_(-1e18)
             
             B = z1.size(0)
             labels = torch.cat([
