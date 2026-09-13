@@ -96,10 +96,6 @@ class HeadLevelCombination(nn.Module):
         
         self.w1 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
         self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
-        self.get_weight = nn.Sequential(
-            nn.Linear(hidden_dim, 1, bias = False),
-            nn.Sigmoid()
-        )
         
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
@@ -134,8 +130,7 @@ class HeadLevelCombination(nn.Module):
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
             x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
             
-            new_weight = self.get_weight(x) 
-            x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
+            x = last_hidden_state + x   # (B, N, hidden_dim)
 
             return x
         
@@ -159,9 +154,8 @@ class HeadLevelCombination(nn.Module):
 
         x = torch.matmul(x, m)                                    # (B, N*Dh, H)
         x = x.reshape(B, N, Dh * H)                               # (B, N, hidden_dim)
-
-        new_weight = self.get_weight(x) 
-        x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
+        
+        x = last_hidden_state + x  # (B, N, hidden_dim)
         
         return x
     
