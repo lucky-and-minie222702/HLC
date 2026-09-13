@@ -196,54 +196,47 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
                 optimizer.zero_grad()
 
                 # --- PHASE 1: Collect detached embeddings for full macro-batch ---
-                z1_list, z2_list = [], []
+                z_list = []
                 with torch.no_grad():
                     for m_batch in micro_batch_buffer:
                         m_batch = {k: v.to(device) for k, v in m_batch.items()}
-                        e1 = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
-                        e2 = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
+                        e = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
                         
-                        z1_list.append(F.normalize(e1, dim=-1))
-                        z2_list.append(F.normalize(e2, dim=-1))
+                        z_list.append(F.normalize(e, dim=-1))
 
-                z1_macro = torch.cat(z1_list, dim=0).detach() # [Macro_B, Dim]
-                z2_macro = torch.cat(z2_list, dim=0).detach() # [Macro_B, Dim]
+                z_macro = torch.cat(z_list, dim=0).detach() # [Macro_B, Dim]
 
                 # --- PHASE 2: Re-forward micro-batches with autograd enabled ---
-                macro_loss = 0.0
+                macro_loss = None
                 current_offset = 0
 
                 for m_batch in micro_batch_buffer:
                     m_batch = {k: v.to(device) for k, v in m_batch.items()}
                     
-                    emb1 = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
-                    emb2 = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
+                    emb = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
 
-                    emb1_norm = F.normalize(emb1, dim=-1)
-                    emb2_norm = F.normalize(emb2, dim=-1)
+                    emb_norm = F.normalize(emb, dim=-1)
 
                     # SimCSE Cosine Similarity Matrix against full macro pool
-                    sim_12 = torch.matmul(emb1_norm, z2_macro.T) / temperature
-                    sim_21 = torch.matmul(emb2_norm, z1_macro.T) / temperature
+                    sim = torch.matmul(emb_norm, z_macro.T) / temperature
 
-                    m_size = emb1.size(0)
+                    m_size = emb.size(0)
                     labels = torch.arange(current_offset, current_offset + m_size, device=device)
                     current_offset += m_size
 
-                    loss_12 = F.cross_entropy(sim_12, labels)
-                    loss_21 = F.cross_entropy(sim_21, labels)
-                    loss = (loss_12 + loss_21) / 2.0
+                    loss = F.cross_entropy(sim, labels)
 
-                    scaled_loss = loss / actual_accum_steps
-                    scaled_loss.backward()
-
-                    macro_loss += loss.item()
+                    if macro_loss is None:
+                        macro_loss = loss
+                    else:
+                        macro_loss += loss
 
                 # --- PHASE 3: Update model weights and schedule ---
+                macro_loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                avg_step_loss = macro_loss / actual_accum_steps
+                avg_step_loss = macro_loss.item() / actual_accum_steps
                 running_loss += avg_step_loss
                 log_loss += avg_step_loss
                 micro_batch_buffer.clear()
