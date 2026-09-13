@@ -104,16 +104,9 @@ class HeadLevelCombination(nn.Module):
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
         
-        self.proj_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-        
         self.dropout = nn.Dropout(0.1)
         
-    def forward(self, hidden_states, last_hidden_state, val = False, use_original = False):  # (B, n_layers, N, hidden_dim)
+    def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
 
         if use_original:
             # Original: 11/09/2026
@@ -143,8 +136,6 @@ class HeadLevelCombination(nn.Module):
             
             new_weight = self.get_weight(x) 
             x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
-            if not val:
-                x = self.proj_head(x)   # (B, N, hidden_dim)
 
             return x
         
@@ -171,9 +162,7 @@ class HeadLevelCombination(nn.Module):
 
         new_weight = self.get_weight(x) 
         x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
-        if not val:
-            x = self.proj_head(x)   # (B, N, hidden_dim)
-
+        
         return x
     
 class HLCModel(nn.Module):
@@ -184,9 +173,18 @@ class HLCModel(nn.Module):
         self.backbone = FrozenExtractorModel(model_name)
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
         
+        self.proj_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         x = x[::, -self.n_layers::, ...]
         x = self.hlc(x, last, val)
         x = mean_pooling(x, attention_mask)
+        if not val:
+            x = self.proj_head(x)
         return x
