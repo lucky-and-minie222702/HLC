@@ -207,7 +207,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
                 z_macro = torch.cat(z_list, dim=0).detach() # [Macro_B, Dim]
 
                 # --- PHASE 2: Re-forward micro-batches with autograd enabled ---
-                macro_loss = None
+                macro_loss = 0.0
                 current_offset = 0
 
                 for m_batch in micro_batch_buffer:
@@ -226,17 +226,16 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
 
                     loss = F.cross_entropy(sim, labels)
 
-                    if macro_loss is None:
-                        macro_loss = loss
-                    else:
-                        macro_loss += loss
+                    scaled_loss = loss / actual_accum_steps
+                    scaled_loss.backward()
+
+                    macro_loss += loss.item()
 
                 # --- PHASE 3: Update model weights and schedule ---
-                macro_loss.backward()
                 optimizer.step()
                 scheduler.step()
 
-                avg_step_loss = macro_loss.item() / actual_accum_steps
+                avg_step_loss = macro_loss / actual_accum_steps
                 running_loss += avg_step_loss
                 log_loss += avg_step_loss
                 micro_batch_buffer.clear()

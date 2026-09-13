@@ -11,28 +11,10 @@ class SimCSELoss(nn.Module):
         self.mode = mode
 
     def forward(self, z1, z2):
-        # z (B, dim)
-        if self.mode == "normal":
-            sim_matrix = F.cosine_similarity(z1.unsqueeze(1), z2.unsqueeze(0), dim=-1) / self.temperature
-            labels = torch.arange(z1.size(0), device=z1.device)
-            loss = F.cross_entropy(sim_matrix, labels)
-            return loss
-
-        elif self.mode == "merged":
-            z = torch.cat([z1, z2], dim=0)
-            sim_matrix = F.cosine_similarity(z.unsqueeze(1), z.unsqueeze(0), dim=-1) / self.temperature
-    
-            sim_matrix.fill_diagonal_(-1e18)
-            
-            B = z1.size(0)
-            labels = torch.cat([
-                torch.arange(B, 2 * B, device=z1.device),
-                torch.arange(0, B, device=z1.device)
-            ], dim=0)
-            
-            loss = F.cross_entropy(sim_matrix, labels)
-
-            return loss
+        sim_matrix = F.cosine_similarity(z1.unsqueeze(1), z2.unsqueeze(0), dim=-1) / self.temperature
+        labels = torch.arange(z1.size(0), device=z1.device)
+        loss = F.cross_entropy(sim_matrix, labels)
+        return loss
 
 class UnsupervisedDataset(Dataset):
     def __init__(self, texts):
