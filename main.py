@@ -3,23 +3,11 @@ import sys
 
 model_config = [
     {
-       "model_name": "princeton-nlp/sup-simcse-bert-base-uncased", 
+       "model_name": "google-bert/bert-base-uncased", 
         "n_heads": 12,
-        "n_layers": 10,
+        "n_layers": 12,
         "hidden_dim": 768,
     },
-    {
-       "model_name": "princeton-nlp/sup-simcse-bert-base-uncased", 
-        "n_heads": 1,
-        "n_layers": 10,
-        "hidden_dim": 768,
-    },
-    # {
-    #    "model_name": "google-bert/bert-base-uncased", 
-    #     "n_heads": 12,
-    #     "n_layers": 12,
-    #     "hidden_dim": 768,
-    # },
 
     # {
     #    "model_name": "google-bert/bert-base-cased", 

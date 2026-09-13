@@ -7,8 +7,8 @@ def load_sts12_16_dataset(years = ["12", "13", "14", "15", "16"]):
     
     for yr in years:
         ds = load_dataset(f"mteb/sts{yr}-sts")
-        # for split in ds.keys():
-        dataset_list.append(ds["test"])
+        for split in ds.keys():
+            dataset_list.append(ds[split])
 
     return concatenate_datasets(dataset_list)
 
