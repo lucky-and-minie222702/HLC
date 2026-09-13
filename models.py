@@ -171,6 +171,7 @@ class HeadLevelCombination(nn.Module):
 
         new_weight = self.get_weight(x) 
         x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
+        print(x.shape)
         if not val:
             x = self.proj_head(x)   # (B, N, hidden_dim)
 
