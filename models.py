@@ -171,7 +171,6 @@ class HeadLevelCombination(nn.Module):
 
         new_weight = self.get_weight(x) 
         x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
-        print(x.shape)
         if not val:
             x = self.proj_head(x)   # (B, N, hidden_dim)
 
@@ -184,12 +183,10 @@ class HLCModel(nn.Module):
         self.n_layers = n_layers
         self.backbone = FrozenExtractorModel(model_name)
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
-        self.out_head = nn.Linear(hidden_dim, hidden_dim, bias = False)
         
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         x = x[::, -self.n_layers::, ...]
         x = self.hlc(x, last, val)
         x = mean_pooling(x, attention_mask)
-        x = self.out_head(x)
-        return x[::, 0, ...]
+        return x
