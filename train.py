@@ -32,8 +32,8 @@ def evaluate_sts(model, dataloader, device):
             batch2 = {k: v.to(device) for k, v in batch2.items()}
             targets = targets.to(device)
 
-            emb1 = model(input_ids=batch1["input_ids"], attention_mask=batch1["attention_mask"])
-            emb2 = model(input_ids=batch2["input_ids"], attention_mask=batch2["attention_mask"])
+            emb1 = model(input_ids=batch1["input_ids"], attention_mask=batch1["attention_mask"], val = True)
+            emb2 = model(input_ids=batch2["input_ids"], attention_mask=batch2["attention_mask"], val = True)
             
             predictions = F.cosine_similarity(emb1, emb2, dim=1)
 
@@ -45,7 +45,6 @@ def evaluate_sts(model, dataloader, device):
 
 
 def run_val(model, tokenizer, batch_size = 128):
-    model.eval()
     for y in ["12", "13", "14", "15", "16"]:
         dataset = load_sts12_16_dataset(years = [y])
         
@@ -61,22 +60,14 @@ def config_to_model(
         hidden_dim,
         n_layers = None,
         n_heads = None,
-        mode = "hlc",
     ):
-    model = None
     
-    if mode == "hlc":
-        model = HLCModel(
-            model_name = model_name,
-            hidden_dim = hidden_dim,
-            n_layers = n_layers,
-            n_heads = n_heads,
-        ).to(device)
-    elif mode == "baseline":
-        model = BaselineModel(
-            model_name = model_name,
-            hidden_dim = hidden_dim,   
-        ).to(device)
+    model = HLCModel(
+        model_name = model_name,
+        hidden_dim = hidden_dim,
+        n_layers = n_layers,
+        n_heads = n_heads,
+    ).to(device)
 
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     return model, tokenizer

@@ -72,18 +72,17 @@ class FrozenExtractorModel(nn.Module):
         super().train(mode)
         self.base_model.eval()
 
-    def forward(self, input_ids, last_state_only = False, attention_mask=None, **kwargs):
+    def forward(self, input_ids, attention_mask=None, **kwargs):
         with torch.no_grad():
             outputs = self.base_model(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 **kwargs
             )
-        if last_state_only:
-            return outputs.last_hidden_state
+            
         all_hidden_states = torch.stack(outputs.hidden_states, axis = 0)  # (n_layers, B, N, hidden_dim)
         all_hidden_states = torch.swapaxes(all_hidden_states, 0, 1)   # (B, n_layers, N, hidden_dim)
-        return all_hidden_states
+        return all_hidden_states, outputs.last_hidden_state
 
 
 class HeadLevelCombination(nn.Module):
@@ -97,14 +96,24 @@ class HeadLevelCombination(nn.Module):
         
         self.w1 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
         self.w2 = nn.Parameter(torch.empty(n_layers, hidden_dim, n_heads))
-        self.w3 = nn.Linear(hidden_dim, hidden_dim, bias = False)
+        self.get_weight = nn.Sequential(
+            nn.Linear(hidden_dim, 1, bias = False),
+            nn.Sigmoid()
+        )
         
         nn.init.xavier_uniform_(self.w1)
         nn.init.xavier_uniform_(self.w2)
         
+        self.proj_head = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(hidden_dim, hidden_dim),
+        )
+        
         self.dropout = nn.Dropout(0.1)
         
-    def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
+    def forward(self, hidden_states, last_hidden_state, val = False, use_original = False):  # (B, n_layers, N, hidden_dim)
 
         if use_original:
             # Original: 11/09/2026
@@ -131,7 +140,11 @@ class HeadLevelCombination(nn.Module):
             x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
             x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
-            x = self.w3(x)  # (B, N, hidden_dim)
+            
+            new_weight = self.get_weight(x) 
+            x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
+            if not val:
+                x = self.proj_head(x)   # (B, N, hidden_dim)
 
             return x
         
@@ -156,7 +169,10 @@ class HeadLevelCombination(nn.Module):
         x = torch.matmul(x, m)                                    # (B, N*Dh, H)
         x = x.reshape(B, N, Dh * H)                               # (B, N, hidden_dim)
 
-        x = self.w3(x)
+        new_weight = self.get_weight(x) 
+        x = last_hidden_state + x * new_weight   # (B, N, hidden_dim)
+        if not val:
+            x = self.proj_head(x)   # (B, N, hidden_dim)
 
         return x
     
@@ -169,30 +185,10 @@ class HLCModel(nn.Module):
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
         self.out_head = nn.Linear(hidden_dim, hidden_dim, bias = False)
         
-    def forward(self, input_ids, attention_mask=None, **kwargs):
-        x = self.backbone(input_ids, attention_mask=attention_mask, last_state_only = True, **kwargs)
-        # x = x[::, -self.n_layers::, ...]
-        # x = self.hlc(x)
-        # x = mean_pooling(x, attention_mask)
-        # x = self.out_head(x)
-        return x[::, 0, ...]
-
-
-class BaselineModel(nn.Module):
-    def __init__(self, model_name, hidden_dim):
-        super().__init__()
-        
-        self.backbone = FrozenExtractorModel(model_name)
-        self.out_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim),
-        )
-        
-    def forward(self, input_ids, attention_mask=None, **kwargs):
-        x = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
-        x = x[::, -1, ...]
+    def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
+        x, last = self.backbone(input_ids, attention_mask=attention_mask, last_state_only = True, **kwargs)
+        x = x[::, -self.n_layers::, ...]
+        x = self.hlc(x, last, val)
         x = mean_pooling(x, attention_mask)
         x = self.out_head(x)
-        return x
+        return x[::, 0, ...]
