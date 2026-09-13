@@ -43,21 +43,13 @@ with open(sys.argv[1], 'r', encoding='utf-8') as file:
     setup = json.load(file)
     
 i = setup["i"]
-mode = setup["mode"]
 batch_size = setup["batch_size"]
 epochs = setup["epochs"]
 log_steps = setup["log_steps"]
 
 c = model_config[i]
-print(c, mode)
-model, tokenizer = config_to_model(**c, mode = mode)
+print(c)
+model, tokenizer = config_to_model(**c)
 
-print("Original results")
 run_val(model, tokenizer, batch_size)
-
-train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}-{mode}")
-
-# eval
-print("After training results")
-print(c, mode)
-run_val(model, tokenizer, batch_size)
+train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
