@@ -116,7 +116,7 @@ class HeadLevelCombination(nn.Module):
         
         self.dropout = nn.Dropout(0.1)
         
-        self.norm1 = nn.LayerNorm(hidden_dim)  # after attention
+        self.norm1 = nn.LayerNorm(n_heads)  # after attention
         self.norm2 = nn.LayerNorm(hidden_dim)  # after ffn
         self.norm3 = nn.LayerNorm(hidden_dim)  # fusion
         
@@ -148,9 +148,8 @@ class HeadLevelCombination(nn.Module):
             x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
             x = self.norm1(x)
             x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
-            x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
             x = self.w3(x)  # (B, N, hidden_dim)
-            x = self.norm2(x)
+            x = self.norm2(x)  # (B, N, hidden_dim)
             
             x = self.norm3(last_hidden_state + x)   # (B, N, hidden_dim)
 
@@ -176,7 +175,7 @@ class HeadLevelCombination(nn.Module):
 
         x = torch.matmul(x, m)                          # (B, N*head_dim, n_heads)
         x = self.norm1(x)
-        x = x.reshape(B, N, self.head_dim * self.n_heads)  # single free reshape (was two-step before)
+        x = x.reshape(B, N, self.head_dim * self.n_heads)
         x = self.w3(x)
         x = self.norm2(x)
 
