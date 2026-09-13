@@ -53,4 +53,7 @@ print(c)
 model, tokenizer = config_to_model(**c)
 
 run_val(model, tokenizer, batch_size)
-train_model_with_accum(model, tokenizer, batch_size = batch_size, accum_steps = accum_steps, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
+if accum_steps == 0:
+    train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
+else:
+    train_model_with_accum(model, tokenizer, batch_size = batch_size, accum_steps = accum_steps, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
