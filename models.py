@@ -122,38 +122,38 @@ class HeadLevelCombination(nn.Module):
         
     def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
 
-        if use_original:
             # Original: 13/09/2026
             # h1, h2 = Q, K ; h3 = V
-            B = hidden_states.shape[0]
-            N = hidden_states.shape[2]
-            hidden_dim = hidden_states.shape[-1]
+            # B = hidden_states.shape[0]
+            # N = hidden_states.shape[2]
+            # hidden_dim = hidden_states.shape[-1]
             
-            h1 = self.w1(hidden_states)  # (B, n_layers, N, n_heads)
-            h2 = self.w2(hidden_states)  # (B, n_layers, N, n_heads)
-            h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads, N)
+            # h1 = self.w1(hidden_states)  # (B, n_layers, N, n_heads)
+            # h2 = self.w2(hidden_states)  # (B, n_layers, N, n_heads)
+            # h1 = torch.swapaxes(h1, 2, 3)  # (B, n_layers, n_heads, N)
             
-            m = torch.matmul(h1, h2) / (hidden_dim ** 0.5)   # (B, n_layers, n_heads, n_heads)
-            m = m.contiguous().view(B, self.n_layers * self.n_heads, self.n_heads)
-            m = F.softmax(m, dim = 1)
-            m = self.dropout(m)
-            # m requires shape (B, n_layers * n_heads, n_heads)
+            # m = torch.matmul(h1, h2) / (hidden_dim ** 0.5)   # (B, n_layers, n_heads, n_heads)
+            # m = m.contiguous().view(B, self.n_layers * self.n_heads, self.n_heads)
+            # m = F.softmax(m, dim = 1)
+            # m = self.dropout(m)
+            # # m requires shape (B, n_layers * n_heads, n_heads)
             
-            x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
-            x = torch.swapaxes(x, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
-            x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
-            x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
-            x = x.contiguous().view(B, N * self.head_dim, self.n_layers * self.n_heads)
+            # x = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
+            # x = torch.swapaxes(x, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
+            # x = x.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
+            # x = torch.swapaxes(x, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
+            # x = x.contiguous().view(B, N * self.head_dim, self.n_layers * self.n_heads)
             
-            x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
-            x = self.norm1(x)
-            x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
-            x = self.w3(x)  # (B, N, hidden_dim)
-            x = self.norm2(x)  # (B, N, hidden_dim)
+            # x = torch.matmul(x, m)  # (B, N * head_dim, n_heads)
+            # x = self.norm1(x)
+            # x = x.contiguous().view(B, N, self.head_dim, self.n_heads)
+            # x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
+            # x = self.w3(x)  # (B, N, hidden_dim)
+            # x = self.norm2(x) # (B, N, hidden_dim)
             
-            x = self.norm3(last_hidden_state + x)   # (B, N, hidden_dim)
+            # x = self.norm3(last_hidden_state + x)   # (B, N, hidden_dim)
 
-            return x
+            # return x
         
         
         # claude optimized:
@@ -175,7 +175,7 @@ class HeadLevelCombination(nn.Module):
 
         x = torch.matmul(x, m)                          # (B, N*head_dim, n_heads)
         x = self.norm1(x)
-        x = x.reshape(B, N, self.head_dim * self.n_heads)
+        x = x.reshape(B, N, self.head_dim * self.n_heads)  # single free reshape (was two-step before)
         x = self.w3(x)
         x = self.norm2(x)
 
