@@ -5,7 +5,7 @@ model_config = [
     {
        "model_name": "google-bert/bert-base-uncased", 
         "n_heads": 12,
-        "n_layers": 12,
+        "n_layers": 9,
         "hidden_dim": 768,
     },
 
