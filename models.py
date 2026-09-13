@@ -118,7 +118,6 @@ class HeadLevelCombination(nn.Module):
         
         self.norm1 = nn.LayerNorm(n_heads)  # after attention
         self.norm2 = nn.LayerNorm(hidden_dim)  # after ffn
-        self.norm3 = nn.LayerNorm(hidden_dim)  # fusion
         
     def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
 
@@ -150,8 +149,6 @@ class HeadLevelCombination(nn.Module):
             # x = x.contiguous().view(B, N, self.head_dim * self.n_heads)  # (B, N, hidden_dim)
             # x = self.w3(x)  # (B, N, hidden_dim)
             # x = self.norm2(x) # (B, N, hidden_dim)
-            
-            # x = self.norm3(last_hidden_state + x)   # (B, N, hidden_dim)
 
             # return x
         
@@ -178,8 +175,6 @@ class HeadLevelCombination(nn.Module):
         x = x.reshape(B, N, self.head_dim * self.n_heads)  # single free reshape (was two-step before)
         x = self.w3(x)
         x = self.norm2(x)
-
-        x = self.norm3(last_hidden_state + x)
         
         return x
     
