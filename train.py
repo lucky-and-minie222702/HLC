@@ -73,7 +73,7 @@ def config_to_model(
     return model, tokenizer
 
 
-def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100, name = "name"):
+def train_model(model, tokenizer, batch_size = 128, accum_steps = 4, epochs = 1, log_steps = 25, name = "name"):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     def collate_fn(batch):
@@ -95,7 +95,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
     
     epochs = epochs
     optimizer = torch.optim.AdamW(model.parameters(), lr=0.001)
-    total_steps = len(train_dataloader) * epochs
+    total_steps = len(train_dataloader) * epochs // accum_steps
     scheduler = get_linear_schedule_with_warmup(
         optimizer, 
         num_warmup_steps = int(total_steps * 0.05), 
@@ -108,26 +108,39 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
         model.train()
         total_train_loss = 0.0
         num_s = 0
+        accum_emb1 = []
+        accum_emb2 = []
 
         for step, batch in tqdm(enumerate(train_dataloader, 1), desc = f"ep [{epoch+1}/{epochs}]", total=len(train_dataloader)):
+            
             num_s += batch["input_ids"].shape[0]
             optimizer.zero_grad()
 
             batch = {k: v.to(device) for k, v in batch.items()}
-            emb1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            emb1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])  # (B, N, hidden_dim)
             emb2 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            
+            accum_emb1.append(emb1)
+            accum_emb2.append(emb2)
+            
+            if step % accum_steps == 0 or step == len(train_dataloader):
+                accum_emb1 = torch.cat(accum_emb1, dim = 0)
+                accum_emb2 = torch.cat(accum_emb2, dim = 0)
 
-            loss = loss_fn(emb1, emb2)
-            loss.backward()
+                loss = loss_fn(accum_emb1, accum_emb2)
+                loss.backward()
 
-            optimizer.step()
-            scheduler.step()
+                optimizer.step()
+                scheduler.step()
 
-            total_train_loss += loss.item()
+                total_train_loss += loss.item()
 
-            if step % log_steps == 0:
-                tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
-                total_train_loss = 0.0
+                if step % log_steps == 0:
+                    tqdm.write(f"Step {step}: loss = {total_train_loss / num_s:.8f}")
+                    total_train_loss = 0.0
+                    
+                accum_emb1 = []
+                accum_emb2 = []
             
         print("Validating on sts:")
         run_val(model, tokenizer, batch_size)

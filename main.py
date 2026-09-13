@@ -45,6 +45,7 @@ with open(sys.argv[1], 'r', encoding='utf-8') as file:
 i = setup["i"]
 batch_size = setup["batch_size"]
 epochs = setup["epochs"]
+accum_steps = setup["accum_steps"]
 log_steps = setup["log_steps"]
 
 c = model_config[i]
@@ -52,4 +53,4 @@ print(c)
 model, tokenizer = config_to_model(**c)
 
 run_val(model, tokenizer, batch_size)
-train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
+train_model(model, tokenizer, batch_size = batch_size, accum_steps = accum_steps, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
