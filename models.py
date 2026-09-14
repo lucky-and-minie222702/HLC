@@ -120,7 +120,8 @@ class HeadLevelCombination(nn.Module):
         Returns:
             Whitened tensor of shape (B, n_layers, N_token, target_dim)
         """
-        B, L, N, D = x.shape
+        N, D = x.shape[-2::]
+        # B, L, N, D = x.shape
         if target_dim is None:
             target_dim = D
 
@@ -164,7 +165,7 @@ class HeadLevelCombination(nn.Module):
         N = hidden_states.shape[2]
         hidden_dim = hidden_states.shape[-1]
         
-        hidden_states = self.whitening(hidden_states, self.target_dim)
+        # hidden_states = self.whitening(hidden_states, self.target_dim)
         
         q = self.q(hidden_states[::, -1, ...])   # (B, N, hidden_dim)
         k = self.k(hidden_states) # (B, n_layers, N, hidden_dim)
@@ -187,7 +188,8 @@ class HeadLevelCombination(nn.Module):
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
-        # x = self.norm(x + hidden_states[::, -1, ...])
+        x = self.whitening(x)
+        x = self.norm(x + hidden_states[::, -1, ...])
     
         return x
     
