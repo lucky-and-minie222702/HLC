@@ -97,10 +97,10 @@ class HeadLevelCombination(nn.Module):
         )
         
         self.ffn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(self.target_dim, self.target_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim // 2, self.target_dim)
+            nn.Linear(self.target_dim, self.target_dim)
         )
         
         self.norm = nn.LayerNorm(hidden_dim)
