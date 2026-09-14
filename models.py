@@ -189,6 +189,7 @@ class HeadLevelCombination(nn.Module):
         
         x = self.ffn(x)  # (B, N, hidden_dim)
         x = self.norm(x + hidden_states[::, -1, ...])
+        x = self.whitening(x, self.target_dim)
     
         return x
     
@@ -257,6 +258,4 @@ class HLCModel(nn.Module):
         x = mean_pooling(x, attention_mask)
         if not val:
             x = self.proj_head(x)
-        else:    
-            x = self.whitening(x)
         return x
