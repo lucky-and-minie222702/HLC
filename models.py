@@ -77,22 +77,22 @@ class HeadLevelCombination(nn.Module):
         self.head_dim = hidden_dim // n_heads
         
         self.q = nn.Sequential(
-            nn.Linear(self.head_dim, self.head_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(self.head_dim, self.head_dim)
+            nn.Linear(hidden_dim, hidden_dim)
         )
         self.k = nn.Sequential(
-            nn.Linear(self.head_dim, self.head_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(self.head_dim, self.head_dim)
+            nn.Linear(hidden_dim, hidden_dim)
         )
         self.v = nn.Sequential(
-            nn.Linear(self.head_dim, self.head_dim),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(self.head_dim, self.head_dim)
+            nn.Linear(hidden_dim, hidden_dim)
         )
         
         self.ffn = nn.Sequential(
@@ -112,30 +112,29 @@ class HeadLevelCombination(nn.Module):
         N = hidden_states.shape[2]
         hidden_dim = hidden_states.shape[-1]
         
-        h = hidden_states.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
-        h = torch.swapaxes(h, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
-        h = h.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
+        q = self.q(last_hidden_state)   # (B, N, hidden_dim)
+        k = self.k(hidden_states) # (B, n_layers, N, hidden_dim)
+        v = self.v(hidden_states)   # (B, n_layers, N, hidden_dim)
         
-        l = last_hidden_state.contiguous().view(B, N, self.n_heads, self.head_dim)
-        
-        q = self.q(l)  # (B, N, n_heads, head_dim)
-        k = self.k(h)  # (B, N, n_layers * n_heads, head_dim)
+        k = k.contiguous().view(B, self.n_layers, N, self.n_heads, self.head_dim)
+        k = torch.swapaxes(k, 1, 2)  # (B, N, n_layers, n_heads, head_dim)
+        k = k.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
         k = torch.swapaxes(k, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
+        
+        q = q.contiguous().view(B, N, self.n_heads, self.head_dim)
         
         m = torch.matmul(q, k) / (self.head_dim ** 0.5)   # (B, N, n_heads, n_layers * n_heads)
         m = F.softmax(m, dim = -1)
         m = self.dropout(m)  
         
-        h = self.v(h)  # (B, N, n_layers * n_heads, head_dim)
-        x = torch.matmul(m, h)  #  (B, N, head_dim, n_heads)
+        v = v.contiguous().view(B, N, self.n_layers, self.n_heads, self.head_dim)
+        v = v.contiguous().view(B, N, self.n_layers * self.n_heads, self.head_dim)
+        x = torch.matmul(m, v)  #  (B, N, head_dim, n_heads)
         
         x = torch.swapaxes(x, 2, 3)  #  (B, N, n_heads, head_dim)
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
-        
-        # l = l.contiguous().view(B, N, self.n_heads * self.head_dim)
-        # x = self.norm2(x + l) # (B, N, hidden_dim)
 
         return x
     
