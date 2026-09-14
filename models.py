@@ -154,7 +154,7 @@ class HLCModel(nn.Module):
         
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
-        x = x[::, -self.n_layers-1::, ...]
+        x = x[::, -self.n_layers-1:-1:, ...]
         x = self.hlc(x, last, val)
         x = mean_pooling(x, attention_mask)
         if not val:
