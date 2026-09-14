@@ -89,6 +89,13 @@ class HeadLevelCombination(nn.Module):
             nn.Linear(self.head_dim, self.head_dim)
         )
         self.v = nn.Sequential(
+            nn.Linear(self.head_dim, self.head_dim),
+            nn.GELU(),
+            nn.Dropout(0.1),
+            nn.Linear(self.head_dim, self.head_dim)
+        )
+        
+        self.ffn = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
@@ -98,8 +105,7 @@ class HeadLevelCombination(nn.Module):
         self.dropout = nn.Dropout(0.1)
         
         self.norm1 = nn.LayerNorm(n_heads)  # after attention
-        self.norm2 = nn.LayerNorm(hidden_dim)  # after ffn
-        self.norm3 = nn.LayerNorm(hidden_dim)  # fusion
+        self.norm2 = nn.LayerNorm(hidden_dim)  # fusion
         
     def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
 
@@ -123,16 +129,18 @@ class HeadLevelCombination(nn.Module):
         m = F.softmax(m, dim = 1)
         m = self.dropout(m)  # (B, N, n_layers * n_heads, n_heads)
         
+        h = self.v(h)  # (B, N, n_layers * n_heads, head_dim)
         h = torch.swapaxes(h, 2, 3)   # (B, N, head_dim, n_layers * n_head)
         x = torch.matmul(h, m)  #  (B, N, head_dim, n_heads)
         
         x = self.norm1(x)  #  (B, N, head_dim, n_heads)
         x = torch.swapaxes(x, 2, 3)  #  (B, N, n_heads, head_dim)
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
-        x = self.v(x)  # (B, N, hidden_dim)
+        
+        x = self.ffn(x)  # (B, N, hidden_dim)
         
         l = l.contiguous().view(B, N, self.n_heads * self.head_dim)
-        x = self.norm3(x + l) # (B, N, hidden_dim)
+        x = self.norm2(x + l) # (B, N, hidden_dim)
 
         return x
     
