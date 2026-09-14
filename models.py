@@ -122,7 +122,7 @@ class HeadLevelCombination(nn.Module):
         k = self.k(h)  # (B, N, n_layers * n_heads, head_dim)
         k = torch.swapaxes(k, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
         
-        m = torch.matmul(k, q) / (self.head_dim ** 0.5)   # (B, N, n_heads, n_layers * n_heads)
+        m = torch.matmul(q, k) / (self.head_dim ** 0.5)   # (B, N, n_heads, n_layers * n_heads)
         m = F.softmax(m, dim = -1)
         m = self.dropout(m)  
         
