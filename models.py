@@ -77,7 +77,7 @@ class HeadLevelCombination(nn.Module):
         self.head_dim = hidden_dim // n_heads
         
         self.q = nn.Sequential(
-            nn.Linear(self.head_dim * self.n_layers, self.head_dim),
+            nn.Linear(self.head_dim, self.head_dim),
             nn.GELU(),
             nn.Dropout(0.1),
             nn.Linear(self.head_dim, self.head_dim)
