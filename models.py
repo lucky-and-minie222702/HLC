@@ -104,9 +104,6 @@ class HeadLevelCombination(nn.Module):
         
         self.dropout = nn.Dropout(0.1)
         
-        self.norm1 = nn.LayerNorm(n_heads)  # after attention
-        self.norm2 = nn.LayerNorm(hidden_dim)  # fusion
-        
     def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
 
         # Original: 13/09/2026
@@ -121,26 +118,25 @@ class HeadLevelCombination(nn.Module):
         
         l = last_hidden_state.contiguous().view(B, N, self.n_heads, self.head_dim)
         
-        q = self.q(h)  # (B, N, n_layers * n_heads, head_dim)
-        k = self.k(l)  # (B, N, n_heads, head_dim)
-        k = torch.swapaxes(k, 2, 3)  # (B, N, head_dim, n_heads)
+        q = self.q(l)  # (B, N, n_heads, head_dim)
+        k = self.k(h)  # (B, N, n_layers * n_heads, head_dim)
+        k = torch.swapaxes(k, 2, 3)  # (B, N, head_dim, n_layers * n_heads)
         
-        m = torch.matmul(q, k) / (self.head_dim ** 0.5)   # (B, N, n_layers * n_heads, n_heads)
-        m = F.softmax(m, dim = 1)
-        m = self.dropout(m)  # (B, N, n_layers * n_heads, n_heads)
+        m = torch.matmul(k, q) / (self.head_dim ** 0.5)   # (B, N, n_heads, n_layers * n_heads)
+        m = F.softmax(m, dim = -1)
+        m = self.dropout(m)  
         
         h = self.v(h)  # (B, N, n_layers * n_heads, head_dim)
         h = torch.swapaxes(h, 2, 3)   # (B, N, head_dim, n_layers * n_head)
         x = torch.matmul(h, m)  #  (B, N, head_dim, n_heads)
         
-        x = self.norm1(x)  #  (B, N, head_dim, n_heads)
         x = torch.swapaxes(x, 2, 3)  #  (B, N, n_heads, head_dim)
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
         
-        l = l.contiguous().view(B, N, self.n_heads * self.head_dim)
-        x = self.norm2(x + l) # (B, N, hidden_dim)
+        # l = l.contiguous().view(B, N, self.n_heads * self.head_dim)
+        # x = self.norm2(x + l) # (B, N, hidden_dim)
 
         return x
     
@@ -162,7 +158,7 @@ class HLCModel(nn.Module):
         
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
-        x = x[::, -self.n_layers-1:-1:, ...]
+        x = x[::, -self.n_layers::, ...]
         x = self.hlc(x, last, val)
         x = mean_pooling(x, attention_mask)
         if not val:
