@@ -74,39 +74,89 @@ class HeadLevelCombination(nn.Module):
         self.n_heads = n_heads
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
-        self.head_dim = hidden_dim // n_heads
+        self.target_dim = 256
+        self.head_dim = self.target_dim // n_heads
         
         self.q = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim)
+            nn.Linear(hidden_dim // 2, self.target_dim)
         )
         self.k = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim)
+            nn.Linear(hidden_dim // 2, self.target_dim)
         )
         self.v = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim)
+            nn.Linear(hidden_dim // 2, self.target_dim)
         )
         
         self.ffn = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(hidden_dim, hidden_dim // 2),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim)
+            nn.Linear(hidden_dim // 2, self.target_dim)
         )
         
         self.norm = nn.LayerNorm(hidden_dim)
         
         self.dropout = nn.Dropout(0.1)
         
-    def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
+
+    def whitening(self, x, target_dim = None, normalize = True):
+        """Applies BERT-Whitening independently per batch and per layer using fully batched PyTorch operations.
+
+        Args:
+            x: Input tensor of shape (B, n_layers, N_token, hidden_dim)
+            target_dim: Desired output dimension k (k <= hidden_dim). If None, keeps
+            hidden_dim.
+            normalize: If True, applies L2 normalization along the hidden dimension.
+
+        Returns:
+            Whitened tensor of shape (B, n_layers, N_token, target_dim)
+        """
+        B, L, N, D = x.shape
+        if target_dim is None:
+            target_dim = D
+
+        # 1. Compute mean across N_token dimension -> (B, L, 1, D)
+        mu = x.mean(dim=2, keepdim=True)
+
+        # 2. Center inputs -> (B, L, N, D)
+        x_centered = x - mu
+
+        # 3. Batched covariance matrix calculation -> (B, L, D, D)
+        cov = torch.matmul(x_centered.transpose(-2, -1), x_centered) / (N - 1)
+
+        # 4. Batched SVD (S is sorted in descending order)
+        # U: (B, L, D, D), S: (B, L, D)
+        U, S, _ = torch.linalg.svd(cov)
+
+        # 5. Truncate to target_dim for dimensionality reduction
+        U_k = U[..., :target_dim]  # (B, L, D, target_dim)
+        S_k = S[..., :target_dim]  # (B, L, target_dim)
+
+        # 6. Compute transformation matrix W = U_k * S_k^(-1/2)
+        # Clamp small singular values to prevent division by zero / numerical instability
+        scale = torch.rsqrt(torch.clamp(S_k, min=1e-6))  # (B, L, target_dim)
+        W = U_k * scale.unsqueeze(-2)  # (B, L, D, target_dim)
+
+        # 7. Apply transformation -> (B, L, N, target_dim)
+        x_whitened = torch.matmul(x_centered, W)
+
+        # 8. Optional L2 normalization for Cosine similarity computation
+        if normalize:
+            x_whitened = torch.nn.functional.normalize(x_whitened, p=2, dim=-1)
+
+        return x_whitened
+        
+        
+    def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
 
         # Original: 13/09/2026
         # h1, h2 = Q, K ; h3 = V
@@ -114,7 +164,9 @@ class HeadLevelCombination(nn.Module):
         N = hidden_states.shape[2]
         hidden_dim = hidden_states.shape[-1]
         
-        q = self.q(last_hidden_state)   # (B, N, hidden_dim)
+        hidden_states = self.whitening(hidden_states, self.target_dim)
+        
+        q = self.q(hidden_states[::, -1, ...])   # (B, N, hidden_dim)
         k = self.k(hidden_states) # (B, n_layers, N, hidden_dim)
         v = self.v(hidden_states)   # (B, n_layers, N, hidden_dim)
         
@@ -135,7 +187,7 @@ class HeadLevelCombination(nn.Module):
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
-        x = self.norm(x + last_hidden_state)    # (B, N, hidden_dim)
+        # x = self.norm(x + hidden_states[::, -1, ...])
     
         return x
     

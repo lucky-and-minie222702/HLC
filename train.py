@@ -242,7 +242,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
 
                 macro_step_count = step // accum_steps
                 if macro_step_count > 0 and macro_step_count % log_steps == 0:
-                    tqdm.write(f"Step {step}: loss = {log_loss / log_steps:.8f}")
+                    tqdm.write(f"Step {step:>}: loss = {log_loss / log_steps:.8f}")
                     log_loss = 0.0
 
         print("Validating on sts:")
