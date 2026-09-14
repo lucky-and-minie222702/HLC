@@ -102,7 +102,7 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
         num_training_steps = total_steps
     )
     
-    loss_fn = SimCSELoss(temperature=0.35)
+    loss_fn = SimCSELoss(temperature=0.75)
 
     for epoch in range(epochs):
         model.train()
@@ -177,7 +177,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
         num_training_steps=total_steps
     )
     
-    temperature = 0.35
+    temperature = 0.75
 
     for epoch in range(epochs):
         model.train()
