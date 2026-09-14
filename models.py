@@ -209,7 +209,7 @@ class HLCModel(nn.Module):
         )
         
     def whitening(
-        self, x: torch.Tensor, target_dim: int = None, normalize: bool = True
+        self, x: torch.Tensor, target_dim: int = None
     ) -> torch.Tensor:
         """Applies whitening transformation to a feature tensor of shape (B, d).
 
@@ -247,10 +247,6 @@ class HLCModel(nn.Module):
 
         # 6. Transform centered data -> (B, target_dim)
         x_whitened = torch.matmul(x_centered, W)
-
-        # 7. Optional L2 normalization for Cosine Similarity
-        if normalize:
-            x_whitened = torch.nn.functional.normalize(x_whitened, p=2, dim=-1)
 
         return x_whitened
         
