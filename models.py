@@ -103,7 +103,7 @@ class HeadLevelCombination(nn.Module):
             nn.Linear(self.target_dim, self.target_dim)
         )
         
-        self.norm = nn.LayerNorm(hidden_dim)
+        self.norm = nn.LayerNorm(self.target_dim)
         
         self.dropout = nn.Dropout(0.1)
         
