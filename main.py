@@ -4,8 +4,6 @@ import sys
 model_config = [
     {
        "model_name": "google-bert/bert-base-uncased", 
-        "n_heads": 12,
-        "n_layers": 9,
         "hidden_dim": 768,
     },
 
@@ -47,10 +45,12 @@ batch_size = setup["batch_size"]
 epochs = setup["epochs"]
 accum_steps = setup["accum_steps"]
 log_steps = setup["log_steps"]
+n_heads = setup["n_heads"]
+n_layers = setup["n_layers"]
 
 c = model_config[i]
 print(c)
-model, tokenizer = config_to_model(**c)
+model, tokenizer = config_to_model(**c, n_heads=n_heads, n_layers = n_layers)
 
 run_val(model, tokenizer, batch_size)
 if accum_steps == 0:
