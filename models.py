@@ -129,7 +129,7 @@ class HeadLevelCombination(nn.Module):
         x = self.norm1(x)  #  (B, N, head_dim, n_heads)
         x = torch.swapaxes(x, 2, 3)  #  (B, N, n_heads, head_dim)
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
-        x = self.w3(x)  # (B, N, hidden_dim)
+        x = self.v(x)  # (B, N, hidden_dim)
         
         l = l.contiguous().view(B, N, self.n_heads * self.head_dim)
         x = self.norm3(x + l) # (B, N, hidden_dim)
