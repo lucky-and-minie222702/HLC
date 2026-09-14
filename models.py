@@ -74,26 +74,26 @@ class HeadLevelCombination(nn.Module):
         self.n_heads = n_heads
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
-        self.target_dim = 256
+        self.target_dim = hidden_dim
         self.head_dim = self.target_dim // n_heads
         
         self.q = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim // 2, self.target_dim)
+            nn.Linear(hidden_dim, self.target_dim)
         )
         self.k = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim // 2, self.target_dim)
+            nn.Linear(hidden_dim, self.target_dim)
         )
         self.v = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim // 2),
+            nn.Linear(hidden_dim, hidden_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim // 2, self.target_dim)
+            nn.Linear(hidden_dim, self.target_dim)
         )
         
         self.ffn = nn.Sequential(
@@ -167,6 +167,9 @@ class HeadLevelCombination(nn.Module):
         
         # hidden_states = self.whitening(hidden_states, self.target_dim)
         
+        if val:
+            hidden_states = self.whitening(hidden_states, self.target_dim)
+        
         q = self.q(hidden_states[::, -1, ...])   # (B, N, hidden_dim)
         k = self.k(hidden_states) # (B, n_layers, N, hidden_dim)
         v = self.v(hidden_states)   # (B, n_layers, N, hidden_dim)
@@ -188,8 +191,7 @@ class HeadLevelCombination(nn.Module):
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
-        x = self.whitening(x)
-        x = self.norm(x + self.whitening(hidden_states[::, -1, ...], self.target_dim))
+        x = self.norm(x + hidden_states[::, -1, ...])
     
         return x
     
