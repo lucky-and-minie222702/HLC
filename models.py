@@ -215,6 +215,6 @@ class HLCModel(nn.Module):
         x = mean_pooling(x, attention_mask)
         if not val:
             x = self.proj_head(x)
-            
-        x = self.hlc.whitening(x, self.hlc.target_dim)
+        else:    
+            x = self.hlc.whitening(x, self.hlc.target_dim)
         return x
