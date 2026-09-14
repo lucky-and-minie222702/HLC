@@ -203,10 +203,10 @@ class HLCModel(nn.Module):
         self.hlc = HeadLevelCombination(n_heads, n_layers, hidden_dim)
         
         self.proj_head = nn.Sequential(
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(self.hlc.target_dim, self.hlc.target_dim),
             nn.GELU(),
             nn.Dropout(0.1),
-            nn.Linear(hidden_dim, hidden_dim),
+            nn.Linear(self.hlc.target_dim, self.hlc.target_dim),
         )
         
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
