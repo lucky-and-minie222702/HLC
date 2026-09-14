@@ -102,6 +102,8 @@ class HeadLevelCombination(nn.Module):
             nn.Linear(hidden_dim, hidden_dim)
         )
         
+        self.norm = nn.LayerNorm(hidden_dim)
+        
         self.dropout = nn.Dropout(0.1)
         
     def forward(self, hidden_states, last_hidden_state, use_original = False):  # (B, n_layers, N, hidden_dim)
@@ -133,7 +135,8 @@ class HeadLevelCombination(nn.Module):
         x = x.contiguous().view(B, N, self.n_heads * self.head_dim)  # (B, N, hidden_dim)
         
         x = self.ffn(x)  # (B, N, hidden_dim)
-
+        x = self.norm(x + last_hidden_state)    # (B, N, hidden_dim)
+    
         return x
     
     
