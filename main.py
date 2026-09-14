@@ -52,7 +52,7 @@ c = model_config[i]
 print(c)
 model, tokenizer = config_to_model(**c, n_heads=n_heads, n_layers = n_layers)
 
-# run_val(model, tokenizer, batch_size)
+run_val(model, tokenizer, batch_size)
 if accum_steps == 0:
     train_model(model, tokenizer, batch_size = batch_size, epochs = epochs, log_steps = log_steps, name = f"{c['model_name'].split('/')[-1]}")
 else:
