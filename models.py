@@ -67,6 +67,28 @@ class FrozenExtractorModel(nn.Module):
         return all_hidden_states, outputs.last_hidden_state
 
 
+class GlowCouplingBlock(nn.Module):
+    def __init__(self, hidden_dim):
+        super().__init__()
+        self.half_dim = hidden_dim // 2
+        self.net = nn.Sequential(
+            nn.Linear(self.half_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, hidden_dim)  # Predicts scale (s) and shift (t)
+        )
+
+    def forward(self, x: torch.Tensor):
+        x1, x2 = x[:, :self.half_dim], x[:, self.half_dim:]
+        st = self.net(x1)
+        shift, log_scale = st[:, :self.half_dim], st[:, self.half_dim:]
+        log_scale = torch.clamp(log_scale, -5.0, 5.0)
+        scale = torch.exp(log_scale)
+        y2 = x2 * scale + shift
+        
+        z = torch.cat([x1, y2], dim=-1)
+        log_det = log_scale.sum(dim=-1)
+        return z, log_det
+
 class HeadLevelCombination(nn.Module):
     def __init__(self, n_heads, n_layers, hidden_dim):
         super().__init__()
@@ -107,54 +129,50 @@ class HeadLevelCombination(nn.Module):
         
         self.dropout = nn.Dropout(0.1)
         
-
-    def whitening(self, x, target_dim = None, normalize = True):
-        """Applies BERT-Whitening independently per batch and per layer using fully batched PyTorch operations.
+        self.flow = nn.ModuleList([
+            GlowCouplingBlock(self.hidden_dim) for _ in range(n_layers)
+        ])
+        
+    def compute_bert_flow(
+        self, 
+        hidden_states: torch.Tensor, 
+        return_log_det: bool = False
+    ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
+        """
+        Applies Normalizing Flow transformation to map anisotropic representations into 
+        an isotropic Gaussian distribution standard space.
 
         Args:
-            x: Input tensor of shape (B, n_layers, N_token, hidden_dim)
-            target_dim: Desired output dimension k (k <= hidden_dim). If None, keeps
-            hidden_dim.
-            normalize: If True, applies L2 normalization along the hidden dimension.
+            hidden_states (torch.Tensor): Shape (B, n_layers, N, hidden_dim)
+            return_log_det (bool): Whether to return log-determinant Jacobian for training loss.
 
         Returns:
-            Whitened tensor of shape (B, n_layers, N_token, target_dim)
+            transformed_states (torch.Tensor): Shape (B, n_layers, N, hidden_dim)
+            log_det (torch.Tensor, optional): Shape (B, n_layers, N) if return_log_det=True
         """
-        N, D = x.shape[-2::]
-        # B, L, N, D = x.shape
-        if target_dim is None:
-            target_dim = D
+        # 1. Capture dimensions
+        B, n_layers, N, hidden_dim = hidden_states.shape
+        
+        # 2. Collapse leading dimensions (B, n_layers, N) -> (-1, hidden_dim)
+        x_flat = hidden_states.reshape(-1, hidden_dim)
+        
+        # 3. Apply Flow transformations sequentially
+        z = x_flat
+        total_log_det = torch.zeros(x_flat.size(0), device=hidden_states.device)
+        
+        # Assumes self.flow = nn.ModuleList([GlowCouplingBlock(hidden_dim) for _ in range(num_blocks)])
+        for block in self.flow:
+            z, log_det = block(z)
+            total_log_det = total_log_det + log_det
 
-        # 1. Compute mean across N_token dimension -> (B, L, 1, D)
-        mu = x.mean(dim=2, keepdim=True)
+        # 4. Reshape back to original 4D tensor structure (B, n_layers, N, hidden_dim)
+        transformed_states = z.reshape(B, n_layers, N, hidden_dim)
 
-        # 2. Center inputs -> (B, L, N, D)
-        x_centered = x - mu
+        if return_log_det:
+            log_det_reshaped = total_log_det.reshape(B, n_layers, N)
+            return transformed_states, log_det_reshaped
 
-        # 3. Batched covariance matrix calculation -> (B, L, D, D)
-        cov = torch.matmul(x_centered.transpose(-2, -1), x_centered) / (N - 1)
-
-        # 4. Batched SVD (S is sorted in descending order)
-        # U: (B, L, D, D), S: (B, L, D)
-        U, S, _ = torch.linalg.svd(cov)
-
-        # 5. Truncate to target_dim for dimensionality reduction
-        U_k = U[..., :target_dim]  # (B, L, D, target_dim)
-        S_k = S[..., :target_dim]  # (B, L, target_dim)
-
-        # 6. Compute transformation matrix W = U_k * S_k^(-1/2)
-        # Clamp small singular values to prevent division by zero / numerical instability
-        scale = torch.rsqrt(torch.clamp(S_k, min=1e-6))  # (B, L, target_dim)
-        W = U_k * scale.unsqueeze(-2)  # (B, L, D, target_dim)
-
-        # 7. Apply transformation -> (B, L, N, target_dim)
-        x_whitened = torch.matmul(x_centered, W)
-
-        # 8. Optional L2 normalization for Cosine similarity computation
-        if normalize:
-            x_whitened = torch.nn.functional.normalize(x_whitened, p=2, dim=-1)
-
-        return x_whitened
+        return transformed_states
         
         
     def forward(self, hidden_states, val = False):  # (B, n_layers, N, hidden_dim)
@@ -165,7 +183,7 @@ class HeadLevelCombination(nn.Module):
         N = hidden_states.shape[2]
         hidden_dim = hidden_states.shape[-1]
         
-        # hidden_states = self.whitening(hidden_states, self.target_dim)
+        hidden_states = self.compute_bert_flow(hidden_states)
         
         q = self.q(hidden_states[::, -1, ...])   # (B, N, hidden_dim)
         k = self.k(hidden_states) # (B, n_layers, N, hidden_dim)
@@ -189,7 +207,6 @@ class HeadLevelCombination(nn.Module):
         
         x = self.ffn(x)  # (B, N, hidden_dim)
         x = self.norm(x + hidden_states[::, -1, ...])
-        x = self.whitening(x, self.target_dim)
     
         return x
     
@@ -208,48 +225,6 @@ class HLCModel(nn.Module):
             nn.Dropout(0.1),
             nn.Linear(self.hlc.target_dim, self.hlc.target_dim),
         )
-        
-    def whitening(
-        self, x: torch.Tensor, target_dim: int = None
-    ) -> torch.Tensor:
-        """Applies whitening transformation to a feature tensor of shape (B, d).
-
-        Args:
-            x: Input tensor of shape (B, d) where B is batch size and d is feature
-            dimension.
-            target_dim: Desired output dimension k (k <= d). If None, keeps d.
-            normalize: If True, applies L2 normalization along the output
-            dimension.
-
-        Returns:
-            Whitened tensor of shape (B, target_dim)
-        """
-        B, d = x.shape
-        if target_dim is None:
-            target_dim = d
-
-        # 1. Compute mean and center features -> (B, d)
-        mu = x.mean(dim=0, keepdim=True)
-        x_centered = x - mu
-
-        # 2. Compute covariance matrix -> (d, d)
-        cov = torch.matmul(x_centered.T, x_centered) / max(B - 1, 1)
-
-        # 3. SVD on covariance matrix (S is sorted in descending order)
-        U, S, _ = torch.linalg.svd(cov)  # U: (d, d), S: (d,)
-
-        # 4. Truncate to target_dim
-        U_k = U[:, :target_dim]  # (d, target_dim)
-        S_k = S[:target_dim]  # (target_dim,)
-
-        # 5. Compute transformation matrix W = U_k * S_k^(-1/2) -> (d, target_dim)
-        scale = torch.rsqrt(torch.clamp(S_k, min=1e-6))
-        W = U_k * scale
-
-        # 6. Transform centered data -> (B, target_dim)
-        x_whitened = torch.matmul(x_centered, W)
-
-        return x_whitened
         
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
