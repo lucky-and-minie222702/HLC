@@ -259,6 +259,7 @@ class HLCModel(nn.Module):
         x = x[::, -self.n_layers::, ...]
         x = self.hlc(x, val)
         x = mean_pooling(x, attention_mask)
+        print(type(x))
         if not val:
             x = self.proj_head(x)
         else:    
