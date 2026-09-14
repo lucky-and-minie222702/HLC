@@ -189,7 +189,7 @@ class HeadLevelCombination(nn.Module):
         
         x = self.ffn(x)  # (B, N, hidden_dim)
         x = self.whitening(x)
-        x = self.norm(x + hidden_states[::, -1, ...])
+        x = self.norm(x + self.whitening(hidden_states[::, -1, ...], self.target_dim))
     
         return x
     
