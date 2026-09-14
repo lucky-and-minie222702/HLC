@@ -209,7 +209,7 @@ class HLCModel(nn.Module):
         )
         
     def whitening(
-        x: torch.Tensor, target_dim: int = None, normalize: bool = True
+        self, x: torch.Tensor, target_dim: int = None, normalize: bool = True
     ) -> torch.Tensor:
         """Applies whitening transformation to a feature tensor of shape (B, d).
 
@@ -259,7 +259,6 @@ class HLCModel(nn.Module):
         x = x[::, -self.n_layers::, ...]
         x = self.hlc(x, val)
         x = mean_pooling(x, attention_mask)
-        print(type(x))
         if not val:
             x = self.proj_head(x)
         else:    
