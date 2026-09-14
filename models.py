@@ -208,6 +208,52 @@ class HLCModel(nn.Module):
             nn.Linear(self.hlc.target_dim, self.hlc.target_dim),
         )
         
+    def whitening(
+        x: torch.Tensor, target_dim: int = None, normalize: bool = True
+    ) -> torch.Tensor:
+        """Applies whitening transformation to a feature tensor of shape (B, d).
+
+        Args:
+            x: Input tensor of shape (B, d) where B is batch size and d is feature
+            dimension.
+            target_dim: Desired output dimension k (k <= d). If None, keeps d.
+            normalize: If True, applies L2 normalization along the output
+            dimension.
+
+        Returns:
+            Whitened tensor of shape (B, target_dim)
+        """
+        B, d = x.shape
+        if target_dim is None:
+            target_dim = d
+
+        # 1. Compute mean and center features -> (B, d)
+        mu = x.mean(dim=0, keepdim=True)
+        x_centered = x - mu
+
+        # 2. Compute covariance matrix -> (d, d)
+        cov = torch.matmul(x_centered.T, x_centered) / max(B - 1, 1)
+
+        # 3. SVD on covariance matrix (S is sorted in descending order)
+        U, S, _ = torch.linalg.svd(cov)  # U: (d, d), S: (d,)
+
+        # 4. Truncate to target_dim
+        U_k = U[:, :target_dim]  # (d, target_dim)
+        S_k = S[:target_dim]  # (target_dim,)
+
+        # 5. Compute transformation matrix W = U_k * S_k^(-1/2) -> (d, target_dim)
+        scale = torch.rsqrt(torch.clamp(S_k, min=1e-6))
+        W = U_k * scale
+
+        # 6. Transform centered data -> (B, target_dim)
+        x_whitened = torch.matmul(x_centered, W)
+
+        # 7. Optional L2 normalization for Cosine Similarity
+        if normalize:
+            x_whitened = torch.nn.functional.normalize(x_whitened, p=2, dim=-1)
+
+        return x_whitened
+        
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         x = x[::, -self.n_layers::, ...]
@@ -216,5 +262,5 @@ class HLCModel(nn.Module):
         if not val:
             x = self.proj_head(x)
         else:    
-            x = self.hlc.whitening(x, self.hlc.target_dim)
+            x = self.whitening(x)
         return x
