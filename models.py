@@ -156,7 +156,7 @@ class HeadLevelCombination(nn.Module):
         return x_whitened
         
         
-    def forward(self, hidden_states, use_original = False):  # (B, n_layers, N, hidden_dim)
+    def forward(self, hidden_states, val = False):  # (B, n_layers, N, hidden_dim)
 
         # Original: 13/09/2026
         # h1, h2 = Q, K ; h3 = V
@@ -210,7 +210,7 @@ class HLCModel(nn.Module):
     def forward(self, input_ids, val = False, attention_mask=None, **kwargs):
         x, last = self.backbone(input_ids, attention_mask=attention_mask, **kwargs)
         x = x[::, -self.n_layers::, ...]
-        x = self.hlc(x, last, val)
+        x = self.hlc(x, val)
         x = mean_pooling(x, attention_mask)
         if not val:
             x = self.proj_head(x)
