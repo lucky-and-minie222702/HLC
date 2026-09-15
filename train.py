@@ -32,8 +32,8 @@ def evaluate_sts(model, dataloader, device):
             batch2 = {k: v.to(device) for k, v in batch2.items()}
             targets = targets.to(device)
 
-            emb1 = model(input_ids=batch1["input_ids"], attention_mask=batch1["attention_mask"], val = True)
-            emb2 = model(input_ids=batch2["input_ids"], attention_mask=batch2["attention_mask"], val = True)
+            emb1, _ = model(input_ids=batch1["input_ids"], attention_mask=batch1["attention_mask"], val = True)
+            emb2, _ = model(input_ids=batch2["input_ids"], attention_mask=batch2["attention_mask"], val = True)
             
             predictions = F.cosine_similarity(emb1, emb2, dim=1)
 
@@ -114,10 +114,11 @@ def train_model(model, tokenizer, batch_size = 128, epochs = 1, log_steps = 100,
             optimizer.zero_grad()
 
             batch = {k: v.to(device) for k, v in batch.items()}
-            emb1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
-            emb2 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            emb1, flow_loss1 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+            emb2, flow_loss2 = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
 
             loss = loss_fn(emb1, emb2)
+            loss = (loss + flow_loss1 + flow_loss2) / 3
             loss.backward()
 
             optimizer.step()
@@ -200,7 +201,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
                 with torch.no_grad():
                     for m_batch in micro_batch_buffer:
                         m_batch = {k: v.to(device) for k, v in m_batch.items()}
-                        e = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
+                        e, _ = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
                         
                         z_list.append(F.normalize(e, dim=-1))
 
@@ -213,7 +214,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
                 for m_batch in micro_batch_buffer:
                     m_batch = {k: v.to(device) for k, v in m_batch.items()}
                     
-                    emb = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
+                    emb, flow_loss = model(input_ids=m_batch["input_ids"], attention_mask=m_batch["attention_mask"])
 
                     emb_norm = F.normalize(emb, dim=-1)
 
@@ -227,6 +228,7 @@ def train_model_with_accum(model, tokenizer, batch_size=128, accum_steps=4, epoc
                     loss = F.cross_entropy(sim, labels)
 
                     scaled_loss = loss / actual_accum_steps
+                    scaled_loss = scaled_loss + flow_loss
                     scaled_loss.backward()
 
                     macro_loss += loss.item()
